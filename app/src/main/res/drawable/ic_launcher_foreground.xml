@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Cassette body -->
+    <path
+        android:fillColor="#2B2117"
+        android:pathData="M28,38 h52 a4,4 0 0 1 4,4 v24 a4,4 0 0 1 -4,4 h-52 a4,4 0 0 1 -4,-4 v-24 a4,4 0 0 1 4,-4 z" />
+    <!-- Label stripe -->
+    <path
+        android:fillColor="#FFF3E4"
+        android:pathData="M31,42 h46 a2,2 0 0 1 2,2 v12 a2,2 0 0 1 -2,2 h-46 a2,2 0 0 1 -2,-2 v-12 a2,2 0 0 1 2,-2 z" />
+    <!-- Tape window -->
+    <path
+        android:fillColor="#2B2117"
+        android:pathData="M42,46 h24 a2,2 0 0 1 2,2 v6 a2,2 0 0 1 -2,2 h-24 a2,2 0 0 1 -2,-2 v-6 a2,2 0 0 1 2,-2 z" />
+    <!-- Reels -->
+    <path
+        android:fillColor="#FFB74D"
+        android:pathData="M46,54 m-3.2,0 a3.2,3.2 0 1 1 6.4,0 a3.2,3.2 0 1 1 -6.4,0" />
+    <path
+        android:fillColor="#FFB74D"
+        android:pathData="M62,54 m-3.2,0 a3.2,3.2 0 1 1 6.4,0 a3.2,3.2 0 1 1 -6.4,0" />
+    <!-- Screw dots -->
+    <path
+        android:fillColor="#FFF3E4"
+        android:pathData="M30,64 m-1.4,0 a1.4,1.4 0 1 1 2.8,0 a1.4,1.4 0 1 1 -2.8,0" />
+    <path
+        android:fillColor="#FFF3E4"
+        android:pathData="M78,64 m-1.4,0 a1.4,1.4 0 1 1 2.8,0 a1.4,1.4 0 1 1 -2.8,0" />
+</vector>
