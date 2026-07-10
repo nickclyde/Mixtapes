@@ -25,8 +25,8 @@ Android app that turns a YouTube video of curated retro games (e.g. TechDweeb, R
 
 ## Stack & conventions
 
-- Kotlin + Jetpack Compose, Material 3. Single module to start.
-- Min SDK 29, target latest stable.
+- Kotlin + Jetpack Compose, Material 3. Two modules: `:core` (pure JVM/Kotlin — chapters, normalize, match, collection, youtube extraction; all unit tests live here) and `:app` (Android — SAF, Compose UI, OkHttp client).
+- Min SDK 29, compile/target SDK 36. Versions in `gradle/libs.versions.toml` are pinned deliberately (e.g. AGP 8.x, not 9.x) — don't bump without asking.
 - Dependency-light: OkHttp for fetching video metadata; avoid pulling in heavyweight libs for fuzzy matching (implement or use a small one).
 - Retro-inspired but tasteful UI. App name is "Mixtapes" — cassette/mixtape theming welcome.
 
@@ -34,11 +34,12 @@ Android app that turns a YouTube video of curated retro games (e.g. TechDweeb, R
 
 - Matching + parsing logic must be **pure Kotlin, unit-testable, no Android deps**. This is where most bugs will live.
 - Fixtures in `fixtures/`: sample video descriptions (with chapters) and a fake ROM directory tree covering naming edge cases (regions, revisions, subtitles, "The" prefixes, multi-disc `.m3u`, same game on multiple systems).
-- Run unit tests with `./gradlew test` before considering any matching change done.
+- Run unit tests with `./gradlew :core:test` (fast, no Android toolchain) before considering any matching change done. `fixtures/` is wired in as `:core` test resources.
 - On-device smoke test: install via adb, point at fixture dirs, confirm a valid `.cfg` is produced.
 
 ## Workflow notes
 
+- Building requires JDK 17+ (default system `java` may be 11 and will fail) — e.g. point `JAVA_HOME` at Android Studio's JBR.
 - Verify builds with `./gradlew assembleDebug` — don't assume compilation.
 - Use scrcpy if you need to see the device screen.
 - Ask before adding permissions beyond SAF or any network endpoint beyond youtube.com/googlevideo metadata.
