@@ -13,10 +13,19 @@ object Fixtures {
     /** The fixtures/roms tree as RomFiles, filtered the same way the on-device scanner filters. */
     fun romTree(): List<RomFile> {
         val root = File(checkNotNull(Fixtures::class.java.getResource("/roms")) { "missing fixture: roms" }.toURI())
-        return root.walkTopDown()
-            .filter { it.isFile && RomExtensions.isLikelyRom(it.name) }
-            .map { RomFile.fromRelativePath(it.relativeTo(root).invariantSeparatorsPath) }
-            .sortedBy { it.relativePath }
-            .toList()
+        val roms = mutableListOf<RomFile>()
+        fun walk(dir: File) {
+            for (child in dir.listFiles().orEmpty()) {
+                when {
+                    child.isDirectory && RomExtensions.isDirInterpretedAsFile(child.name) ->
+                        roms += RomFile.fromRelativePath(child.relativeTo(root).invariantSeparatorsPath)
+                    child.isDirectory -> walk(child)
+                    RomExtensions.isLikelyRom(child.name) ->
+                        roms += RomFile.fromRelativePath(child.relativeTo(root).invariantSeparatorsPath)
+                }
+            }
+        }
+        walk(root)
+        return roms.sortedBy { it.relativePath }
     }
 }

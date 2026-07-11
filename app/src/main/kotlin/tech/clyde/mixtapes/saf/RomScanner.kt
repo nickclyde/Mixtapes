@@ -42,6 +42,14 @@ class RomScanner(private val resolver: ContentResolver) {
     ) {
         for (child in listChildren(tree, parentDocId)) {
             when {
+                // A `Game.m3u/` directory is one game (ES-DE "directories
+                // interpreted as files") — record the directory, never descend.
+                child.isDirectory && RomExtensions.isDirInterpretedAsFile(child.name) -> out += RomFile(
+                    system = system,
+                    relativePath = pathPrefix + child.name,
+                    displayName = child.name,
+                    tags = NoIntroTags.parse(child.name),
+                )
                 child.isDirectory -> if (depth < MAX_DEPTH && !child.name.startsWith(".")) {
                     collect(tree, child.documentId, system, "$pathPrefix${child.name}/", out, depth + 1)
                 }
