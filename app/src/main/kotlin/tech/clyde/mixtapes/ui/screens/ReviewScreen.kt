@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import tech.clyde.mixtapes.core.model.MatchResult
 import tech.clyde.mixtapes.core.model.RomFile
 import tech.clyde.mixtapes.core.model.ScoredCandidate
+import tech.clyde.mixtapes.core.search.ArchiveSearch
 import tech.clyde.mixtapes.ui.ReviewRow
 import tech.clyde.mixtapes.ui.WizardState
 
@@ -255,6 +256,16 @@ private fun CandidatePickerDialog(
                         }
                     }
                 }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Search the web",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(4.dp))
+                ArchiveLinkChips(
+                    remember(row.chapter.title) { ArchiveSearch.forChapterTitle(row.chapter.title) },
+                )
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },

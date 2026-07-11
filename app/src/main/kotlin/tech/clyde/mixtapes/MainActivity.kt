@@ -89,7 +89,9 @@ private fun WizardApp(viewModel: WizardViewModel = viewModel()) {
             )
             is WizardStep.Done -> DoneScreen(
                 fileName = step.fileName,
+                collectionName = step.collectionName,
                 gameCount = step.gameCount,
+                missing = step.missing,
                 onMakeAnother = viewModel::backToInput,
             )
             is WizardStep.Error -> ErrorScreen(

@@ -48,6 +48,9 @@ object SystemHint {
         return normalized.takeIf { family(it) != null }
     }
 
+    /** Canonical key for a hint (the first member of its family), or null if unrecognized. */
+    fun canonical(hint: String): String? = family(normalize(hint))?.first()
+
     /** True when the hinted system and a ROM's system directory are the same family. */
     fun matches(hint: String, system: String): Boolean {
         val normalizedSystem = normalize(system)

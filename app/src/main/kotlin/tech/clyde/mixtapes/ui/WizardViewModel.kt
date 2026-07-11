@@ -17,6 +17,8 @@ import tech.clyde.mixtapes.core.match.Matcher
 import tech.clyde.mixtapes.core.model.Chapter
 import tech.clyde.mixtapes.core.model.MatchResult
 import tech.clyde.mixtapes.core.model.RomFile
+import tech.clyde.mixtapes.core.search.ArchiveSearch
+import tech.clyde.mixtapes.core.search.MissingGame
 import tech.clyde.mixtapes.saf.CollectionFileWriter
 import tech.clyde.mixtapes.saf.DirPrefs
 import tech.clyde.mixtapes.saf.RomScanner
@@ -34,7 +36,12 @@ sealed interface WizardStep {
     data object Input : WizardStep
     data class Working(val phase: WorkPhase, val progress: Float? = null) : WizardStep
     data object Review : WizardStep
-    data class Done(val fileName: String, val gameCount: Int) : WizardStep
+    data class Done(
+        val fileName: String,
+        val collectionName: String,
+        val gameCount: Int,
+        val missing: List<MissingGame> = emptyList(),
+    ) : WizardStep
     data class Error(val error: WizardError, val detail: String? = null) : WizardStep
 }
 
@@ -248,6 +255,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val name = CollectionName.fromVideoTitle(current.collectionName)
         val selectedRoms = current.rows.filter { it.included }.mapNotNull { it.selected }
         if (selectedRoms.isEmpty()) return
+        val missing = current.rows
+            .filter { !it.chapter.skipped && it.selected == null }
+            .map { ArchiveSearch.forChapterTitle(it.chapter.title) }
 
         viewModelScope.launch {
             _state.update { it.copy(showOverwritePrompt = false) }
@@ -264,7 +274,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 is CollectionFileWriter.WriteResult.Written ->
                     _state.update {
                         it.copy(
-                            step = WizardStep.Done(result.fileName, selectedRoms.size),
+                            step = WizardStep.Done(result.fileName, name, selectedRoms.size, missing),
                             showOverwritePrompt = false,
                         )
                     }

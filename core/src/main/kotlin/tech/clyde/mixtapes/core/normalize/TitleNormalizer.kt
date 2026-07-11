@@ -24,10 +24,12 @@ object TitleNormalizer {
 
     /** Normalizes a game title as parsed from a chapter list. */
     fun normalizeGame(raw: String): Normalized =
-        normalize(
-            NoIntroTags.stripGroups(
-                raw.trim().trim('"', '“', '”').replace(RANK_DECORATION, ""),
-            ),
+        normalize(displayTitle(raw))
+
+    /** Human-readable title: rank decoration, quotes, and bracket groups stripped; case kept. */
+    fun displayTitle(raw: String): String =
+        NoIntroTags.stripGroups(
+            raw.trim().trim('"', '“', '”').replace(RANK_DECORATION, ""),
         )
 
     /** Normalizes a ROM file name (strips extension and No-Intro tags first). */
