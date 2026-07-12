@@ -68,6 +68,9 @@ private fun WizardApp(viewModel: WizardViewModel = viewModel()) {
                 onEsDePicked = viewModel::onEsDePicked,
                 onRomsPicked = viewModel::onRomsPicked,
                 onWriteAbsolutePathsChange = viewModel::setWriteAbsolutePaths,
+                onLlmApiKeyChange = viewModel::setLlmApiKey,
+                onLlmBaseUrlChange = viewModel::setLlmBaseUrl,
+                onLlmModelChange = viewModel::setLlmModel,
                 onContinue = viewModel::continueFromSetup,
             )
             WizardStep.Input -> InputScreen(

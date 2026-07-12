@@ -3,7 +3,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Backups disabled so the LLM API key in SharedPreferences never leaves the device. -->
     <application
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="Mixtapes"
         android:supportsRtl="true"

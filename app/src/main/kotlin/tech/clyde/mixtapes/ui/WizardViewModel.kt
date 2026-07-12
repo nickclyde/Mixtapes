@@ -61,6 +61,10 @@ data class WizardState(
     val esDePicked: Boolean = false,
     val romsPicked: Boolean = false,
     val writeAbsolutePaths: Boolean = false,
+    val useTranscript: Boolean = false,
+    val llmConfigured: Boolean = false,
+    val llmBaseUrl: String = "",
+    val llmModel: String = "",
     val sharedUrl: String = "",
     val collectionName: String = "",
     val rows: List<ReviewRow> = emptyList(),
@@ -98,6 +102,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 esDePath = dirPrefs.esDeTreeUri?.let(TreePathGuesser::guessPath),
                 romsPath = dirPrefs.romsTreeUri?.let(TreePathGuesser::guessPath),
                 writeAbsolutePaths = dirPrefs.writeAbsolutePaths,
+                llmConfigured = dirPrefs.llmConfigured(),
+                llmBaseUrl = dirPrefs.llmBaseUrl,
+                llmModel = dirPrefs.llmModel,
             )
         }
     }
@@ -124,6 +131,25 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     fun changeFolders() {
         _state.update { it.copy(step = WizardStep.Setup) }
+    }
+
+    fun setUseTranscript(enabled: Boolean) {
+        _state.update { it.copy(useTranscript = enabled) }
+    }
+
+    fun setLlmApiKey(key: String) {
+        dirPrefs.llmApiKey = key
+        _state.update { it.copy(llmConfigured = dirPrefs.llmConfigured()) }
+    }
+
+    fun setLlmBaseUrl(url: String) {
+        dirPrefs.llmBaseUrl = url
+        _state.update { it.copy(llmBaseUrl = dirPrefs.llmBaseUrl) }
+    }
+
+    fun setLlmModel(model: String) {
+        dirPrefs.llmModel = model
+        _state.update { it.copy(llmModel = dirPrefs.llmModel) }
     }
 
     fun onEsDePicked(uri: Uri) {

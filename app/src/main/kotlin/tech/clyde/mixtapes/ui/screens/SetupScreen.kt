@@ -16,10 +16,18 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import tech.clyde.mixtapes.ui.WizardState
 
@@ -29,6 +37,9 @@ fun SetupScreen(
     onEsDePicked: (Uri) -> Unit,
     onRomsPicked: (Uri) -> Unit,
     onWriteAbsolutePathsChange: (Boolean) -> Unit,
+    onLlmApiKeyChange: (String) -> Unit = {},
+    onLlmBaseUrlChange: (String) -> Unit = {},
+    onLlmModelChange: (String) -> Unit = {},
     onContinue: () -> Unit,
 ) {
     val esDeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) {
@@ -81,6 +92,14 @@ fun SetupScreen(
             }
         }
 
+        Spacer(Modifier.height(12.dp))
+        LlmSection(
+            state = state,
+            onApiKeyChange = onLlmApiKeyChange,
+            onBaseUrlChange = onLlmBaseUrlChange,
+            onModelChange = onLlmModelChange,
+        )
+
         Spacer(Modifier.height(20.dp))
         Button(
             onClick = onContinue,
@@ -88,6 +107,101 @@ fun SetupScreen(
             modifier = Modifier.align(Alignment.End),
         ) {
             Text("Continue")
+        }
+    }
+}
+
+/**
+ * Optional BYOK configuration for transcript extraction. Collapsed by default;
+ * setup can complete without ever opening it.
+ */
+@Composable
+private fun LlmSection(
+    state: WizardState,
+    onApiKeyChange: (String) -> Unit,
+    onBaseUrlChange: (String) -> Unit,
+    onModelChange: (String) -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    // The saved key is never read back into the UI; this field only holds what the
+    // user types this session. Empty field + saved key shows "Key saved".
+    var apiKey by rememberSaveable { mutableStateOf("") }
+    var showKey by rememberSaveable { mutableStateOf(false) }
+    // Seeded from the effective values once; clearing a field mid-edit must not
+    // snap back to the default until the screen is next recreated.
+    var baseUrl by rememberSaveable { mutableStateOf(state.llmBaseUrl) }
+    var model by rememberSaveable { mutableStateOf(state.llmModel) }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("AI transcript extraction (optional)", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (state.llmConfigured) "Configured" else "Bring your own API key",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OutlinedButton(onClick = { expanded = !expanded }) {
+                    Text(if (expanded) "Hide" else "Set up")
+                }
+            }
+            if (!expanded) return@Column
+
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Reads the video's captions and asks an AI model for the game list — useful " +
+                    "for videos without chapters. Works with OpenRouter, OpenAI, or any " +
+                    "OpenAI-compatible endpoint; costs go to your own key.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = apiKey,
+                onValueChange = {
+                    apiKey = it
+                    onApiKeyChange(it)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("API key") },
+                placeholder = { Text("sk-or-…") },
+                singleLine = true,
+                visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    TextButton(onClick = { showKey = !showKey }) {
+                        Text(if (showKey) "Hide" else "Show")
+                    }
+                },
+                supportingText = {
+                    if (apiKey.isEmpty() && state.llmConfigured) Text("Key saved — type to replace")
+                },
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = baseUrl,
+                onValueChange = {
+                    baseUrl = it
+                    onBaseUrlChange(it)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Base URL") },
+                singleLine = true,
+                supportingText = { Text("Any OpenAI-compatible endpoint; blank resets to OpenRouter") },
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = model,
+                onValueChange = {
+                    model = it
+                    onModelChange(it)
+                },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Model") },
+                singleLine = true,
+                supportingText = { Text("Blank resets to the default") },
+            )
         }
     }
 }

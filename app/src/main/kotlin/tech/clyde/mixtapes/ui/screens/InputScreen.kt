@@ -60,7 +60,7 @@ fun InputScreen(
             Text(if (showPasteBox) "Hide pasted chapter list" else "Paste a chapter list instead")
         }
         TextButton(onClick = onChangeFolders) {
-            Text("Change folders")
+            Text("Settings")
         }
         if (showPasteBox) {
             OutlinedTextField(
