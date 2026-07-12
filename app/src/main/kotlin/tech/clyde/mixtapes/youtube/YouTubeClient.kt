@@ -24,8 +24,7 @@ class YouTubeClient(private val http: OkHttpClient = OkHttpClient()) {
             .url("https://www.youtube.com/watch?v=$id&hl=en")
             .header("User-Agent", DESKTOP_UA)
             .header("Accept-Language", "en-US,en;q=0.9")
-            // Pre-accepted consent cookies bypass the EU interstitial.
-            .header("Cookie", "CONSENT=YES+cb; SOCS=CAI")
+            .header("Cookie", CONSENT_COOKIES)
             .build()
 
         val html = try {
@@ -47,9 +46,12 @@ class YouTubeClient(private val http: OkHttpClient = OkHttpClient()) {
         private val VIDEO_ID =
             Regex("""(?:v=|youtu\.be/|shorts/|live/|embed/)([A-Za-z0-9_-]{11})""")
 
-        private const val DESKTOP_UA =
+        internal const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
+        /** Pre-accepted consent cookies bypass the EU interstitial. */
+        internal const val CONSENT_COOKIES = "CONSENT=YES+cb; SOCS=CAI"
 
         fun videoId(url: String): String? = VIDEO_ID.find(url)?.groupValues?.get(1)
 
