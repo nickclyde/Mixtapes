@@ -1,0 +1,25 @@
+{
+  "responseContext": {"serviceTrackingParams": []},
+  "playabilityStatus": {"status": "OK"},
+  "videoDetails": {
+    "videoId": "dQw4w9WgXcQ",
+    "title": "20 MORE Awesome SNES Hidden Gems!",
+    "lengthSeconds": "1145"
+  },
+  "captions": {
+    "playerCaptionsTracklistRenderer": {
+      "captionTracks": [
+        {
+          "baseUrl": "https://www.youtube.com/api/timedtext?v=dQw4w9WgXcQ&caps=asr&kind=asr&lang=en&fromandroid=1",
+          "name": {"runs": [{"text": "English (auto-generated)"}]},
+          "vssId": "a.en",
+          "languageCode": "en",
+          "kind": "asr",
+          "isTranslatable": true
+        }
+      ],
+      "audioTracks": [{"captionTrackIndices": [0]}],
+      "defaultAudioTrackIndex": 0
+    }
+  }
+}

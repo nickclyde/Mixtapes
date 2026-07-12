@@ -1,10 +1,25 @@
 package tech.clyde.mixtapes.core.youtube
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-data class VideoMetadata(val title: String, val description: String)
+/** One entry of `captions.playerCaptionsTracklistRenderer.captionTracks`. */
+data class CaptionTrack(
+    val baseUrl: String,
+    val languageCode: String,
+    /** "asr" for auto-generated tracks; null for uploader-provided ones. */
+    val kind: String? = null,
+    val name: String? = null,
+)
+
+data class VideoMetadata(
+    val title: String,
+    val description: String,
+    val captionTracks: List<CaptionTrack> = emptyList(),
+)
 
 enum class ExtractionError { MARKER_NOT_FOUND, MALFORMED_JSON, MISSING_FIELDS }
 
@@ -53,7 +68,50 @@ object WatchPageExtractor {
             .jsonPrimitive.content
         val description = videoDetails["shortDescription"]?.jsonPrimitive?.content ?: ""
 
-        return ExtractionResult.Success(VideoMetadata(title = title, description = description))
+        return ExtractionResult.Success(
+            VideoMetadata(title = title, description = description, captionTracks = captionTracks(root)),
+        )
+    }
+
+    /**
+     * Parses caption tracks out of a raw player-response JSON body (no HTML markers) —
+     * the shape returned by the Innertube `youtubei/v1/player` endpoint. Returns an
+     * empty list for missing captions or unparseable JSON; captions are always optional.
+     */
+    fun captionTracksFromPlayerResponse(json: String): List<CaptionTrack> {
+        val root = try {
+            Json.parseToJsonElement(json).jsonObject
+        } catch (_: Exception) {
+            return emptyList()
+        }
+        return captionTracks(root)
+    }
+
+    private fun captionTracks(root: JsonObject): List<CaptionTrack> = try {
+        root["captions"]?.jsonObject
+            ?.get("playerCaptionsTracklistRenderer")?.jsonObject
+            ?.get("captionTracks")?.jsonArray
+            .orEmpty()
+            .mapNotNull { element ->
+                val track = element.jsonObject
+                val baseUrl = track["baseUrl"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                val languageCode = track["languageCode"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                CaptionTrack(
+                    baseUrl = baseUrl,
+                    languageCode = languageCode,
+                    kind = track["kind"]?.jsonPrimitive?.content,
+                    name = trackName(track),
+                )
+            }
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    /** Track names appear as {"simpleText": ...} on older pages and {"runs": [{"text": ...}]} on newer ones. */
+    private fun trackName(track: JsonObject): String? {
+        val name = track["name"]?.jsonObject ?: return null
+        name["simpleText"]?.jsonPrimitive?.content?.let { return it }
+        return name["runs"]?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content
     }
 
     /** Scans from the `{` at [start] to its matching `}`, string- and escape-aware. */
