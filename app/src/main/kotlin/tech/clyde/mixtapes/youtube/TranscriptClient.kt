@@ -10,6 +10,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import tech.clyde.mixtapes.core.transcript.Json3TranscriptParser
 import tech.clyde.mixtapes.core.youtube.CaptionTrack
 import tech.clyde.mixtapes.core.youtube.CaptionTrackSelector
+import tech.clyde.mixtapes.core.youtube.TimedText
 import tech.clyde.mixtapes.core.youtube.WatchPageExtractor
 
 /**
@@ -73,7 +74,7 @@ class TranscriptClient(private val http: OkHttpClient = OkHttpClient()) {
     /** GETs a timedtext URL as json3. Returns null for the PoToken empty-200 signature. */
     private fun timedtext(baseUrl: String): String? {
         val request = Request.Builder()
-            .url("$baseUrl&fmt=json3")
+            .url(TimedText.json3Url(baseUrl))
             .header("User-Agent", YouTubeClient.DESKTOP_UA)
             .header("Accept-Language", "en-US,en;q=0.9")
             .header("Cookie", YouTubeClient.CONSENT_COOKIES)
