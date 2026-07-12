@@ -75,6 +75,9 @@ private fun WizardApp(viewModel: WizardViewModel = viewModel()) {
             )
             WizardStep.Input -> InputScreen(
                 initialUrl = state.sharedUrl,
+                useTranscript = state.useTranscript,
+                llmConfigured = state.llmConfigured,
+                onUseTranscriptChange = viewModel::setUseTranscript,
                 onSubmitUrl = viewModel::makeMixtapeFromUrl,
                 onSubmitPastedText = viewModel::makeMixtapeFromPastedText,
                 onChangeFolders = viewModel::changeFolders,
@@ -101,6 +104,7 @@ private fun WizardApp(viewModel: WizardViewModel = viewModel()) {
                 error = step.error,
                 detail = step.detail,
                 onBackToInput = viewModel::backToInput,
+                onRetryTranscript = if (step.canRetryWithTranscript) viewModel::retryWithTranscript else null,
             )
         }
     }

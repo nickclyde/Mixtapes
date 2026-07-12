@@ -1,10 +1,13 @@
 package tech.clyde.mixtapes.ui.screens
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -21,6 +24,9 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun InputScreen(
     initialUrl: String = "",
+    useTranscript: Boolean = false,
+    llmConfigured: Boolean = false,
+    onUseTranscriptChange: (Boolean) -> Unit = {},
     onSubmitUrl: (String) -> Unit,
     onSubmitPastedText: (String) -> Unit,
     onChangeFolders: () -> Unit = {},
@@ -46,7 +52,27 @@ fun InputScreen(
             placeholder = { Text("https://www.youtube.com/watch?v=…") },
             singleLine = true,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = useTranscript && llmConfigured,
+                onCheckedChange = onUseTranscriptChange,
+                enabled = llmConfigured,
+            )
+            Column {
+                Text("Extract from transcript with AI", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    if (llmConfigured) {
+                        "Reads the captions instead of the chapter list — for videos without chapters."
+                    } else {
+                        "Add an API key in Settings first."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
         Button(
             onClick = { onSubmitUrl(url) },
             enabled = url.isNotBlank(),

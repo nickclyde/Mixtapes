@@ -17,7 +17,12 @@ import androidx.compose.ui.unit.dp
 import tech.clyde.mixtapes.ui.WizardError
 
 @Composable
-fun ErrorScreen(error: WizardError, detail: String?, onBackToInput: () -> Unit) {
+fun ErrorScreen(
+    error: WizardError,
+    detail: String?,
+    onBackToInput: () -> Unit,
+    onRetryTranscript: (() -> Unit)? = null,
+) {
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Center,
@@ -38,6 +43,14 @@ fun ErrorScreen(error: WizardError, detail: String?, onBackToInput: () -> Unit) 
                     "No ROMs found in the selected ROMs directory."
                 WizardError.WRITE_FAILED ->
                     "Couldn't write the collection file." + (detail?.let { "\n$it" } ?: "")
+                WizardError.NO_TRANSCRIPT ->
+                    "This video has no usable captions, so the transcript can't be read. " +
+                        "Paste the game list manually instead."
+                WizardError.NO_API_KEY ->
+                    "Transcript extraction needs an API key. Add one under Settings → " +
+                        "AI transcript extraction."
+                WizardError.LLM_ERROR ->
+                    "The AI request failed." + (detail?.let { "\n$it" } ?: "")
             },
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,
@@ -45,6 +58,9 @@ fun ErrorScreen(error: WizardError, detail: String?, onBackToInput: () -> Unit) 
         Spacer(Modifier.height(24.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = onBackToInput) { Text("Back") }
+            if (onRetryTranscript != null) {
+                Button(onClick = onRetryTranscript) { Text("Try transcript instead") }
+            }
         }
     }
 }

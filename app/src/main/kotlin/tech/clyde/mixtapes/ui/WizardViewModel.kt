@@ -19,16 +19,20 @@ import tech.clyde.mixtapes.core.model.MatchResult
 import tech.clyde.mixtapes.core.model.RomFile
 import tech.clyde.mixtapes.core.search.ArchiveSearch
 import tech.clyde.mixtapes.core.search.MissingGame
+import tech.clyde.mixtapes.core.youtube.VideoMetadata
+import tech.clyde.mixtapes.llm.LlmClient
 import tech.clyde.mixtapes.saf.CollectionFileWriter
 import tech.clyde.mixtapes.saf.DirPrefs
 import tech.clyde.mixtapes.saf.RomScanner
 import tech.clyde.mixtapes.saf.TreePathGuesser
+import tech.clyde.mixtapes.youtube.TranscriptClient
 import tech.clyde.mixtapes.youtube.YouTubeClient
 
-enum class WorkPhase { FETCHING, SCANNING, MATCHING }
+enum class WorkPhase { FETCHING, TRANSCRIBING, EXTRACTING, SCANNING, MATCHING }
 
 enum class WizardError {
     INVALID_URL, NETWORK, EXTRACTION, NO_CHAPTERS, EMPTY_LIBRARY, WRITE_FAILED,
+    NO_TRANSCRIPT, NO_API_KEY, LLM_ERROR,
 }
 
 sealed interface WizardStep {
@@ -42,7 +46,11 @@ sealed interface WizardStep {
         val gameCount: Int,
         val missing: List<MissingGame> = emptyList(),
     ) : WizardStep
-    data class Error(val error: WizardError, val detail: String? = null) : WizardStep
+    data class Error(
+        val error: WizardError,
+        val detail: String? = null,
+        val canRetryWithTranscript: Boolean = false,
+    ) : WizardStep
 }
 
 data class ReviewRow(
@@ -79,12 +87,21 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     private val scanner = RomScanner(application.contentResolver)
     private val fileWriter = CollectionFileWriter(application.contentResolver)
     private val youTube = YouTubeClient()
+    private val transcriptClient = TranscriptClient()
+    private val llmClient = LlmClient()
 
     private val _state = MutableStateFlow(WizardState())
     val state: StateFlow<WizardState> = _state.asStateFlow()
 
     /** ROM scan cached per app session; a rescan requires relaunching the app. */
     private var cachedRoms: List<RomFile>? = null
+
+    /**
+     * Last successful fetch, so the NO_CHAPTERS error can retry via transcript
+     * without hitting YouTube again. Cleared by the pasted-text path, which has
+     * no video to transcribe.
+     */
+    private var lastFetch: Pair<String, VideoMetadata>? = null
 
     init {
         refreshSetup()
@@ -185,7 +202,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     fun makeMixtapeFromUrl(url: String) {
         viewModelScope.launch {
             _state.update { it.copy(step = WizardStep.Working(WorkPhase.FETCHING)) }
-            when (val fetched = youTube.fetch(url.trim())) {
+            val trimmed = url.trim()
+            when (val fetched = youTube.fetch(trimmed)) {
                 is YouTubeClient.FetchResult.Failure -> {
                     val error = when (fetched.error) {
                         YouTubeClient.FetchError.INVALID_URL -> WizardError.INVALID_URL
@@ -194,25 +212,104 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     }
                     _state.update { it.copy(step = WizardStep.Error(error)) }
                 }
-                is YouTubeClient.FetchResult.Success -> runPipeline(
-                    description = fetched.metadata.description,
-                    defaultName = CollectionName.fromVideoTitle(fetched.metadata.title),
-                )
+                is YouTubeClient.FetchResult.Success -> {
+                    val videoId = YouTubeClient.videoId(trimmed)
+                    lastFetch = videoId?.let { it to fetched.metadata }
+                    val defaultName = CollectionName.fromVideoTitle(fetched.metadata.title)
+                    if (state.value.useTranscript && videoId != null) {
+                        runTranscriptPipeline(videoId, fetched.metadata, defaultName)
+                    } else {
+                        runChapterPipeline(fetched.metadata.description, defaultName)
+                    }
+                }
             }
         }
     }
 
     fun makeMixtapeFromPastedText(text: String) {
-        viewModelScope.launch { runPipeline(description = text, defaultName = "mixtape") }
+        lastFetch = null
+        viewModelScope.launch { runChapterPipeline(description = text, defaultName = "mixtape") }
     }
 
-    private suspend fun runPipeline(description: String, defaultName: String) {
+    /** From the NO_CHAPTERS error screen: rerun the last fetched video through the transcript path. */
+    fun retryWithTranscript() {
+        val (videoId, metadata) = lastFetch ?: run {
+            backToInput()
+            return
+        }
+        viewModelScope.launch {
+            runTranscriptPipeline(videoId, metadata, CollectionName.fromVideoTitle(metadata.title))
+        }
+    }
+
+    private suspend fun runChapterPipeline(description: String, defaultName: String) {
         val chapters = ChapterFilter.markSkipped(ChapterParser.parse(description))
         if (chapters.isEmpty()) {
-            _state.update { it.copy(step = WizardStep.Error(WizardError.NO_CHAPTERS)) }
+            _state.update {
+                it.copy(
+                    step = WizardStep.Error(
+                        WizardError.NO_CHAPTERS,
+                        // Offered even without an API key; the retry then explains itself
+                        // with a NO_API_KEY error pointing at Settings.
+                        canRetryWithTranscript = lastFetch != null,
+                    ),
+                )
+            }
+            return
+        }
+        scanMatchReview(chapters, defaultName)
+    }
+
+    private suspend fun runTranscriptPipeline(videoId: String, metadata: VideoMetadata, defaultName: String) {
+        if (!dirPrefs.llmConfigured()) {
+            _state.update { it.copy(step = WizardStep.Error(WizardError.NO_API_KEY)) }
             return
         }
 
+        _state.update { it.copy(step = WizardStep.Working(WorkPhase.TRANSCRIBING)) }
+        val transcript = when (val fetched = transcriptClient.fetch(videoId, metadata.captionTracks)) {
+            is TranscriptClient.Result.Failure -> {
+                val error = when (fetched.error) {
+                    TranscriptClient.Error.NETWORK -> WizardError.NETWORK
+                    TranscriptClient.Error.NO_TRACKS,
+                    TranscriptClient.Error.EMPTY,
+                    TranscriptClient.Error.PARSE,
+                    -> WizardError.NO_TRANSCRIPT
+                }
+                _state.update { it.copy(step = WizardStep.Error(error)) }
+                return
+            }
+            is TranscriptClient.Result.Success -> fetched.plainText
+        }
+
+        _state.update { it.copy(step = WizardStep.Working(WorkPhase.EXTRACTING)) }
+        val config = LlmClient.Config(
+            baseUrl = dirPrefs.llmBaseUrl,
+            apiKey = dirPrefs.llmApiKey ?: return,
+            model = dirPrefs.llmModel,
+        )
+        val titles = when (val result = llmClient.extractGameTitles(metadata.title, transcript, config)) {
+            is LlmClient.Result.Failure -> {
+                val detail = when (result.error) {
+                    LlmClient.Error.NETWORK -> "Couldn't reach the AI endpoint."
+                    LlmClient.Error.HTTP -> result.detail
+                    LlmClient.Error.PARSE -> "The model's response couldn't be read."
+                    LlmClient.Error.EMPTY -> "The model found no games in the transcript."
+                }
+                _state.update { it.copy(step = WizardStep.Error(WizardError.LLM_ERROR, detail)) }
+                return
+            }
+            is LlmClient.Result.Success -> result.titles
+        }
+
+        // ChapterFilter as a safety net: the model may still emit "Intro"/"Honorable
+        // Mentions"-style entries despite the prompt. Timestamps don't exist here and
+        // nothing downstream reads Chapter.seconds.
+        val chapters = ChapterFilter.markSkipped(titles.map { Chapter(title = it, seconds = 0) })
+        scanMatchReview(chapters, defaultName)
+    }
+
+    private suspend fun scanMatchReview(chapters: List<Chapter>, defaultName: String) {
         val romsUri = dirPrefs.romsTreeUri
         if (romsUri == null) {
             _state.update { it.copy(step = WizardStep.Setup) }

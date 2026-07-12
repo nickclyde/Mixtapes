@@ -26,6 +26,8 @@ fun WorkingScreen(phase: WorkPhase, progress: Float?) {
         Text(
             text = when (phase) {
                 WorkPhase.FETCHING -> "Fetching video details…"
+                WorkPhase.TRANSCRIBING -> "Fetching transcript…"
+                WorkPhase.EXTRACTING -> "Reading the transcript for games…"
                 WorkPhase.SCANNING -> "Scanning ROM library…"
                 WorkPhase.MATCHING -> "Matching games…"
             },
