@@ -11,7 +11,7 @@ You know the videos — TechDweeb's *"Your Handheld NEEDS These 50 Games!"*, Ret
 ## How it works
 
 1. **Paste a YouTube link** (or share one straight from the YouTube app — Mixtapes appears in the share sheet). No API key, no login; it reads the public watch page. You can also paste a raw chapter list as text.
-2. **Chapter parsing** — the game list is extracted from the video description's chapter timestamps. Non-game chapters ("Intro ramble", "The best opinion") are detected and skipped.
+2. **Chapter parsing** — the game list is extracted from the video description's chapter timestamps. Non-game chapters ("Intro ramble", "The best opinion") are detected and skipped. For videos without chapters, optional **AI transcript extraction** (below) reads the captions instead.
 3. **Matching** — both sides are normalized (No-Intro/Redump tags like `(USA)` `(Rev 1)` `[!]` stripped, punctuation/articles/roman numerals unified), then token-based fuzzy matching runs against a scan of your ROM folders. Chapter system tags like `[SNES]` are used as hints.
 4. **Review** — confident matches are pre-checked; ambiguous ones are never silently guessed. Tap any row to pick from ranked candidates or search your whole library.
 5. **Write** — the collection lands in `<ES-DE>/collections/custom-<name>.cfg` with portable `%ROMPATH%` paths (absolute paths available as an option). No other ES-DE file is touched.
@@ -34,6 +34,14 @@ You know the videos — TechDweeb's *"Your Handheld NEEDS These 50 Games!"*, Ret
   <img src="docs/screenshots/setup.png" alt="Setup screen with ES-DE and ROMs directories" width="80%">
 </p>
 
+## AI transcript extraction (optional)
+
+Some list videos have no chapters. Mixtapes can instead fetch the video's captions and ask an AI model for the game list — either via the checkbox on the input screen or the "Try transcript instead" offer when no chapters are found. Auto-generated captions mangle game titles ("ease" for *Ys*), so the model is asked for best-guess official titles and the fuzzy matcher plus review screen absorb the rest — nothing is ever silently guessed.
+
+Bring your own key: under **Settings → AI transcript extraction**, paste an API key from any OpenAI-compatible provider. The default endpoint is [OpenRouter](https://openrouter.ai/) (one key reaches every major model, including free rate-limited ones); the base URL and model are configurable. A typical video costs fractions of a cent on the default model. The key is stored only on the device (app-private storage, backups disabled) and requests go directly from the device to your chosen provider.
+
+Deliberately deferred for now: the Innertube `get_transcript` fallback tier (the timedtext + ANDROID-client ladder covers current videos) and on-device inference — a 4B-class model on handheld CPU takes several minutes per transcript, so cloud-with-your-key wins until small-model prefill gets dramatically faster.
+
 ## Building
 
 Two modules:
@@ -50,7 +58,7 @@ Two modules:
 
 ## Privacy
 
-Everything runs on-device. The only network traffic is fetching the video's public metadata from YouTube.
+Everything runs on-device. The only network traffic is fetching the video's public metadata (and, when you use transcript extraction, its captions) from YouTube — plus, only if you configure it, the transcript sent to the AI provider of your choice under your own API key. There is no backend and no telemetry.
 
 ## License
 

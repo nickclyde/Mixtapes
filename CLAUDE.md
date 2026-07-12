@@ -19,7 +19,8 @@ Android app that turns a YouTube video of curated retro games (e.g. TechDweeb, R
 
 ## Architecture decisions
 
-1. **Game list extraction:** Parse YouTube **chapter titles** from the video description first (these creators almost always chapter per game). Transcript parsing is a fallback/v2 concern. Avoid requiring a YouTube API key if feasible.
+1. **Game list extraction:** Parse YouTube **chapter titles** from the video description first (these creators almost always chapter per game). Avoid requiring a YouTube API key if feasible.
+   - **Transcript extraction (optional, BYOK):** captions are fetched from the timedtext URLs already present in the watch-page player response (ANDROID-client Innertube fallback for PoToken-gated `exp=xpe` tracks; `get_transcript` is a documented-but-deferred third tier), then one OpenAI-compatible `chat/completions` call extracts the game list. The user supplies the API key/base URL/model in Settings; chapters stay the primary path and the toggle defaults off. On-device inference was researched and rejected for now (6–17 min prefill for a 4B model on the Thor's CPU).
 2. **Matching:** Normalize both sides (strip No-Intro/Redump tags like `(USA)`, `(Rev 1)`, `[!]`; normalize punctuation, articles, roman numerals), then token-based fuzzy match. Ambiguous or multi-system matches go to a **review screen** — never silently guess.
 3. **All on-device.** No backend. Filesystem access via Storage Access Framework (persisted URI permissions for the ES-DE and ROMs directories).
 
@@ -42,4 +43,4 @@ Android app that turns a YouTube video of curated retro games (e.g. TechDweeb, R
 - Building requires JDK 17+ (default system `java` may be 11 and will fail) — e.g. point `JAVA_HOME` at Android Studio's JBR.
 - Verify builds with `./gradlew assembleDebug` — don't assume compilation.
 - Use scrcpy if you need to see the device screen.
-- Ask before adding permissions beyond SAF or any network endpoint beyond youtube.com/googlevideo metadata.
+- Ask before adding permissions beyond SAF or any network endpoint beyond the approved list: youtube.com/googlevideo metadata (watch pages, timedtext, youtubei) and the user-configured OpenAI-compatible LLM endpoint (default openrouter.ai).
