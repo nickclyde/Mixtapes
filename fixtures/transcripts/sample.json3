@@ -1,0 +1,16 @@
+{
+  "wireMagic": "pb3",
+  "pens": [{}],
+  "wsWinStyles": [{}],
+  "wpWinPositions": [{}],
+  "events": [
+    {"tStartMs": 0, "dDurationMs": 3000, "id": 1, "wpWinPosId": 1, "wsWinStyleId": 1},
+    {"tStartMs": 120, "dDurationMs": 2880, "segs": [{"utf8": "hey everybody welcome back today we're"}, {"utf8": "\n"}]},
+    {"tStartMs": 3010, "dDurationMs": 2990, "segs": [{"utf8": "counting down twenty more"}, {"utf8": " hidden gems"}]},
+    {"tStartMs": 6000, "dDurationMs": 2500, "segs": [{"utf8": "first up is castle vania symphony of"}]},
+    {"tStartMs": 8500, "dDurationMs": 2000, "segs": [{"utf8": "the night an absolute classic"}]},
+    {"tStartMs": 10500, "dDurationMs": 1500, "segs": [{"utf8": "\n"}]},
+    {"tStartMs": 17000, "dDurationMs": 3000, "segs": [{"utf8": "next we have ease one and two"}, {"utf8": "\n"}, {"utf8": "on the turbografx"}]},
+    {"tStartMs": 20500, "dDurationMs": 2500, "segs": [{"utf8": "such   an underrated  series"}]}
+  ]
+}
