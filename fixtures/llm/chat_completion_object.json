@@ -1,0 +1,16 @@
+{
+  "id": "gen-1720000002-ghi789",
+  "object": "chat.completion",
+  "created": 1720000002,
+  "model": "meta-llama/llama-4-maverick:free",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"games\": [\"Castlevania: Symphony of the Night\", \"Ys I & II\", \"Terranigma\"]}"
+      },
+      "finish_reason": "stop"
+    }
+  ]
+}

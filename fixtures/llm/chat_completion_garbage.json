@@ -1,0 +1,16 @@
+{
+  "id": "gen-1720000003-jkl012",
+  "object": "chat.completion",
+  "created": 1720000003,
+  "model": "some/underwhelming-model",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The video covers many great retro games. The host is enthusiastic about hidden gems and recommends checking them out. Overall a fun watch with solid recommendations throughout."
+      },
+      "finish_reason": "stop"
+    }
+  ]
+}
