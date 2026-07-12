@@ -33,6 +33,9 @@ class LlmClient(
     }
 
     enum class Error {
+        /** The base URL or key was rejected while building the request (never sent). */
+        CONFIG,
+
         /** Transport failure or timeout. */
         NETWORK,
 
@@ -48,17 +51,24 @@ class LlmClient(
 
     suspend fun extractGameTitles(videoTitle: String, transcript: String, config: Config): Result =
         withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url(config.baseUrl.trimEnd('/') + "/chat/completions")
-                .header("Authorization", "Bearer ${config.apiKey}")
-                // OpenRouter attribution headers; other gateways ignore them.
-                .header("HTTP-Referer", "https://github.com/nickclyde/Mixtapes")
-                .header("X-Title", "Mixtapes")
-                .post(
-                    GameListPrompt.requestBody(config.model, videoTitle, transcript)
-                        .toRequestBody("application/json".toMediaType()),
-                )
-                .build()
+            // Both .url() (malformed base URL) and .header() (illegal chars in the
+            // key) throw IllegalArgumentException on user-typed config — surface it
+            // as a Failure instead of letting it kill the process.
+            val request = try {
+                Request.Builder()
+                    .url(config.baseUrl.trimEnd('/') + "/chat/completions")
+                    .header("Authorization", "Bearer ${config.apiKey}")
+                    // OpenRouter attribution headers; other gateways ignore them.
+                    .header("HTTP-Referer", "https://github.com/nickclyde/Mixtapes")
+                    .header("X-Title", "Mixtapes")
+                    .post(
+                        GameListPrompt.requestBody(config.model, videoTitle, transcript)
+                            .toRequestBody("application/json".toMediaType()),
+                    )
+                    .build()
+            } catch (e: IllegalArgumentException) {
+                return@withContext Result.Failure(Error.CONFIG, e.message)
+            }
 
             val (code, body) = try {
                 http.newCall(request).execute().use { response ->

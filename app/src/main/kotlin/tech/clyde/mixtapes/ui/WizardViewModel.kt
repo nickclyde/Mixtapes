@@ -291,6 +291,8 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val titles = when (val result = llmClient.extractGameTitles(metadata.title, transcript, config)) {
             is LlmClient.Result.Failure -> {
                 val detail = when (result.error) {
+                    LlmClient.Error.CONFIG ->
+                        "The AI settings look invalid — check the base URL and API key in Settings."
                     LlmClient.Error.NETWORK -> "Couldn't reach the AI endpoint."
                     LlmClient.Error.HTTP -> result.detail
                     LlmClient.Error.PARSE -> "The model's response couldn't be read."

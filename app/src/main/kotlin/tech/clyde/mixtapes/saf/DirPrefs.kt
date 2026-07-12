@@ -35,9 +35,17 @@ class DirPrefs(private val context: Context) {
      * rejected — deprecated upstream and it would be the app's first crypto
      * dependency.
      */
+    // Pasted keys carry baggage that trim() misses and OkHttp rejects in a header:
+    // seen in the wild, a label line copied along with the key ("OpenCode API
+    // Key\nsk-or-…"). Keys never contain whitespace and labels precede them, so
+    // keep only the last whitespace-separated token — on read too, to heal
+    // already-stored values.
     var llmApiKey: String?
-        get() = prefs.getString(KEY_LLM_API_KEY, null)?.takeIf { it.isNotBlank() }
-        set(value) = prefs.edit { putString(KEY_LLM_API_KEY, value?.trim()?.takeIf { it.isNotBlank() }) }
+        get() = sanitizeKey(prefs.getString(KEY_LLM_API_KEY, null))
+        set(value) = prefs.edit { putString(KEY_LLM_API_KEY, sanitizeKey(value)) }
+
+    private fun sanitizeKey(raw: String?): String? =
+        raw?.split(Regex("\\s+"))?.lastOrNull { it.isNotEmpty() }
 
     /** OpenAI-compatible endpoint base; blank resets to the OpenRouter default. */
     var llmBaseUrl: String
