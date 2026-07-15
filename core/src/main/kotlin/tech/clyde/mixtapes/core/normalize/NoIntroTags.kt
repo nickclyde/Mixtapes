@@ -5,6 +5,8 @@ import tech.clyde.mixtapes.core.model.RomTags
 object NoIntroTags {
     private val TAG_GROUP = Regex("""\(([^)]*)\)|\[([^\]]*)]""")
     private val DIGITS = Regex("""\d+""")
+    private val YEAR = Regex("""(19|20)\d\d""")
+    private val BAD_DUMP = Regex("""b\d+""")
 
     private val REGION_NAMES = setOf(
         "USA", "Europe", "Japan", "World", "Asia", "Australia", "Brazil",
@@ -34,17 +36,28 @@ object NoIntroTags {
             val lower = content.lowercase()
             when {
                 lower == "!" -> verified = true
-                lower == "b" || lower.matches(Regex("b\\d+")) -> bad = true
+                isBadDump(lower) -> bad = true
                 lower.startsWith("rev") ->
                     revision = DIGITS.find(lower)?.value?.toIntOrNull() ?: revision
-                lower.startsWith("disc") || lower.startsWith("disk") ->
-                    disc = DIGITS.find(lower)?.value?.toIntOrNull()
-                lower.startsWith("beta") || lower.startsWith("proto") ||
-                    lower.startsWith("demo") || lower.startsWith("sample") -> prerelease = true
+                isDisc(lower) -> disc = DIGITS.find(lower)?.value?.toIntOrNull()
+                isPrerelease(lower) -> prerelease = true
                 regions.isEmpty() -> parseRegions(content)?.let { regions = it }
             }
         }
         return RomTags(regions, revision, disc, verified, bad, prerelease)
+    }
+
+    /**
+     * True when a group's content is a No-Intro/GoodTools-style tag — `(USA)`,
+     * `(Rev 1)`, `(Disc 2)`, `(Beta)`, `(!)`, `(b1)`, `(1995)`, `(En,Ja)` —
+     * rather than title text such as an alternate regional name.
+     */
+    fun isTagContent(content: String): Boolean {
+        val trimmed = content.trim()
+        val lower = trimmed.lowercase()
+        return lower == "!" || isBadDump(lower) || lower.startsWith("rev") ||
+            isDisc(lower) || isPrerelease(lower) || parseRegions(trimmed) != null ||
+            lower.matches(YEAR) || isLanguageList(trimmed)
     }
 
     /** Removes every `(...)` and `[...]` group plus the extension: the bare title. */
@@ -56,6 +69,22 @@ object NoIntroTags {
         text.replace(TAG_GROUP, " ")
             .replace(Regex("\\s+"), " ")
             .trim()
+
+    private fun isBadDump(lower: String): Boolean =
+        lower == "b" || lower.matches(BAD_DUMP)
+
+    private fun isDisc(lower: String): Boolean =
+        lower.startsWith("disc") || lower.startsWith("disk")
+
+    private fun isPrerelease(lower: String): Boolean =
+        lower.startsWith("beta") || lower.startsWith("proto") ||
+            lower.startsWith("demo") || lower.startsWith("sample")
+
+    /** `En,Ja` / `En,Fr,De` — two or more comma-separated two-letter codes. */
+    private fun isLanguageList(content: String): Boolean {
+        val parts = content.split(',').map { it.trim() }
+        return parts.size >= 2 && parts.all { it.length == 2 && it.all(Char::isLetter) }
+    }
 
     private fun withoutExtension(fileName: String): String =
         if ('.' in fileName) fileName.substringBeforeLast('.') else fileName

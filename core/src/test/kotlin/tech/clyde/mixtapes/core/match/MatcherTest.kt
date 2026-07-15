@@ -162,6 +162,72 @@ class MatcherTest {
     }
 
     @Test
+    fun `exact title in a crowded family auto-matches`() {
+        // Real-world regression from the Thor: Tetris 2 and Tetris & Dr. Mario
+        // sit next to Tetris Attack; the exact match must not be dragged into
+        // review by its one-token-apart neighbours.
+        assertAuto("Tetris Attack", "snes/Tetris Attack (USA) (En,Ja).zip")
+    }
+
+    @Test
+    fun `japanese alternate in parentheses matches the western rom`() =
+        assertAuto("Panel de Pon (Tetris Attack)", "snes/Tetris Attack (USA) (En,Ja).zip")
+
+    @Test
+    fun `slash-combined alternate titles match`() =
+        assertAuto("Tetris Attack / Panel de Pon", "snes/Tetris Attack (USA) (En,Ja).zip")
+
+    @Test
+    fun `variant matching preserves the original title on GameMatch`() {
+        val match = Matcher.match(listOf("Panel de Pon (Tetris Attack)"), roms).single()
+        assertEquals("Panel de Pon (Tetris Attack)", match.gameTitle)
+    }
+
+    @Test
+    fun `collection system filter turns a multi-system tie into an auto match`() {
+        val result = Matcher.match(listOf("Aladdin"), roms, "snes").single().result
+        assertTrue("expected Auto, was $result", result is MatchResult.Auto)
+        assertEquals("snes/Aladdin (USA).sfc", (result as MatchResult.Auto).rom.relativePath)
+    }
+
+    @Test
+    fun `collection system filter accepts family aliases`() {
+        val result = Matcher.match(listOf("Aladdin"), roms, "Super Famicom").single().result
+        assertTrue("expected Auto, was $result", result is MatchResult.Auto)
+        assertEquals("snes", (result as MatchResult.Auto).rom.system)
+    }
+
+    @Test
+    fun `collection system filter excludes other systems entirely`() {
+        val result = Matcher.match(listOf("Wave Race 64"), roms, "snes").single().result
+        assertTrue("no snes rom must win, was $result", result !is MatchResult.Auto)
+        if (result is MatchResult.NeedsReview) {
+            assertTrue(
+                "candidates must all be snes, got ${result.candidates}",
+                result.candidates.all { it.rom.system == "snes" },
+            )
+        }
+    }
+
+    @Test
+    fun `raw directory name works as a filter for unknown families`() {
+        val result = Matcher.match(listOf("Skate or Die"), roms, "apple2gs").single().result
+        assertTrue("expected Auto, was $result", result is MatchResult.Auto)
+    }
+
+    @Test
+    fun `filter matching no roms yields NoMatch for everything`() {
+        val results = Matcher.match(listOf("Chrono Trigger", "Aladdin"), roms, "3ds")
+        assertTrue(results.all { it.result == MatchResult.NoMatch })
+    }
+
+    @Test
+    fun `a per-title hint contradicting the filter demotes to review`() {
+        val result = Matcher.match(listOf("Wave Race 64 [N64]"), roms, "snes").single().result
+        assertTrue("must not auto-match outside the filter, was $result", result !is MatchResult.Auto)
+    }
+
+    @Test
     fun `results come back in input order with titles attached`() {
         val results = Matcher.match(listOf("Chrono Trigger", "EarthBound"), roms)
         assertEquals(listOf("Chrono Trigger", "EarthBound"), results.map { it.gameTitle })

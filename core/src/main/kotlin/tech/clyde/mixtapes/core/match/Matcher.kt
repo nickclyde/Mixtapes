@@ -36,10 +36,20 @@ object Matcher {
     /**
      * Matches each game title against the ROM library. Same-title variants on
      * one system are collapsed via [CandidatePreference] before scoring;
-     * multi-system hits always come back as NeedsReview.
+     * multi-system hits always come back as NeedsReview. A non-null
+     * [collectionSystem] (manual selection or LLM-detected video system)
+     * restricts matching to ROMs on that system family — a per-title bracket
+     * hint can veto within the filter but never widen it.
      */
-    fun match(gameTitles: List<String>, roms: List<RomFile>): List<GameMatch> {
-        val library = CandidatePreference.collapse(roms.filter { RomExtensions.isLikelyRom(it.displayName) })
+    fun match(
+        gameTitles: List<String>,
+        roms: List<RomFile>,
+        collectionSystem: String? = null,
+    ): List<GameMatch> {
+        val scoped =
+            if (collectionSystem == null) roms
+            else roms.filter { SystemHint.matches(collectionSystem, it.system) }
+        val library = CandidatePreference.collapse(scoped.filter { RomExtensions.isLikelyRom(it.displayName) })
             .map { it to TitleNormalizer.normalizeRom(it.displayName) }
 
         val tokenIndex = buildMap<String, MutableList<Int>> {
@@ -49,11 +59,37 @@ object Matcher {
         }
 
         return gameTitles.map { title ->
-            GameMatch(
-                title,
-                matchOne(TitleNormalizer.normalizeGame(title), SystemHint.fromTitle(title), library, tokenIndex),
-            )
+            val hint = SystemHint.fromTitle(title)
+            val results = TitleVariants.of(title).map { variant ->
+                matchOne(TitleNormalizer.normalizeGame(variant), hint, library, tokenIndex)
+            }
+            GameMatch(title, bestOf(results))
         }
+    }
+
+    /**
+     * The best result across a title's variant readings. An [MatchResult.Auto]
+     * beats any review; among the rest the top candidate score decides.
+     * Replacement is strictly-greater so the original title wins ties. A
+     * NeedsReview winner absorbs the other reviews' candidates, so the picker
+     * offers both readings.
+     */
+    private fun bestOf(results: List<MatchResult>): MatchResult {
+        val winner = results.maxByOrNull(::rank) ?: return MatchResult.NoMatch
+        if (winner !is MatchResult.NeedsReview) return winner
+
+        val merged = results.filterIsInstance<MatchResult.NeedsReview>()
+            .flatMap { it.candidates }
+            .groupBy { it.rom.relativePath }
+            .map { (_, dupes) -> dupes.maxBy { it.score } }
+            .sortedWith(compareByDescending<ScoredCandidate> { it.score }.thenBy { it.rom.relativePath })
+        return MatchResult.NeedsReview(merged.take(MAX_CANDIDATES))
+    }
+
+    private fun rank(result: MatchResult): Double = when (result) {
+        is MatchResult.Auto -> 1.0 + result.score
+        is MatchResult.NeedsReview -> result.candidates.firstOrNull()?.score ?: 0.0
+        MatchResult.NoMatch -> -1.0
     }
 
     private fun matchOne(

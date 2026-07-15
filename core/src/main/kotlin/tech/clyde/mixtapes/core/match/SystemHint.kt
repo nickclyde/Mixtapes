@@ -38,6 +38,9 @@ object SystemHint {
         setOf("ngp", "ngpc", "neogeopocket"),
     )
 
+    /** Canonical id of each known family (its first member), in declaration order. */
+    val canonicalIds: List<String> = FAMILIES.map { it.first() }
+
     /**
      * The system hint from the last bracket group of a raw chapter title, or
      * null when there is none or it isn't a recognizable system name.
@@ -53,9 +56,10 @@ object SystemHint {
 
     /** True when the hinted system and a ROM's system directory are the same family. */
     fun matches(hint: String, system: String): Boolean {
+        val normalizedHint = normalize(hint)
         val normalizedSystem = normalize(system)
-        if (hint == normalizedSystem) return true
-        val hintFamily = family(hint) ?: return false
+        if (normalizedHint == normalizedSystem) return true
+        val hintFamily = family(normalizedHint) ?: return false
         return normalizedSystem in hintFamily
     }
 
