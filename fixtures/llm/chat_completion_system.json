@@ -1,0 +1,17 @@
+{
+  "id": "gen-1720000004-mno345",
+  "object": "chat.completion",
+  "created": 1720000004,
+  "model": "google/gemini-2.5-flash",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"system\": \"snes\", \"games\": [\"Castlevania: Symphony of the Night\", \"Ys I & II\", \"Terranigma\"]}"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {"prompt_tokens": 8250, "completion_tokens": 48, "total_tokens": 8298}
+}

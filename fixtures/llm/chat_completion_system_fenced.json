@@ -1,0 +1,17 @@
+{
+  "id": "gen-1720000007-vwx234",
+  "object": "chat.completion",
+  "created": 1720000007,
+  "model": "some/fence-loving-model",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "```json\n{\"system\": \"snes\", \"games\": [\"Castlevania: Symphony of the Night\", \"Ys I & II\", \"Terranigma\"]}\n```"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {"prompt_tokens": 8250, "completion_tokens": 52, "total_tokens": 8302}
+}

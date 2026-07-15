@@ -16,19 +16,57 @@ class LlmResponseParserTest {
     @Test
     fun `parses content that is exactly a json array`() {
         val parsed = LlmResponseParser.parse(Fixtures.text("llm/chat_completion_clean.json"))
-        assertEquals(Parsed.Titles(expectedTitles), parsed)
+        assertEquals(Parsed.Extraction(expectedTitles), parsed)
     }
 
     @Test
     fun `parses an array buried in prose and code fences`() {
         val parsed = LlmResponseParser.parse(Fixtures.text("llm/chat_completion_fenced.json"))
-        assertEquals(Parsed.Titles(expectedTitles), parsed)
+        assertEquals(Parsed.Extraction(expectedTitles), parsed)
     }
 
     @Test
     fun `parses a single-array-value json object`() {
         val parsed = LlmResponseParser.parse(Fixtures.text("llm/chat_completion_object.json"))
-        assertEquals(Parsed.Titles(expectedTitles), parsed)
+        assertEquals(Parsed.Extraction(expectedTitles), parsed)
+    }
+
+    @Test
+    fun `parses an object with system and games`() {
+        val parsed = LlmResponseParser.parse(Fixtures.text("llm/chat_completion_system.json"))
+        assertEquals(Parsed.Extraction(expectedTitles, "snes"), parsed)
+    }
+
+    @Test
+    fun `system aliases canonicalize to the family id`() {
+        val parsed = LlmResponseParser.parse(Fixtures.text("llm/chat_completion_system_alias.json"))
+        assertEquals(Parsed.Extraction(expectedTitles, "snes"), parsed)
+    }
+
+    @Test
+    fun `unknown system becomes null but titles survive`() {
+        val parsed = LlmResponseParser.parse(Fixtures.text("llm/chat_completion_system_unknown.json"))
+        assertEquals(Parsed.Extraction(expectedTitles, null), parsed)
+    }
+
+    @Test
+    fun `a fenced object with system parses`() {
+        val parsed = LlmResponseParser.parse(Fixtures.text("llm/chat_completion_system_fenced.json"))
+        assertEquals(Parsed.Extraction(expectedTitles, "snes"), parsed)
+    }
+
+    @Test
+    fun `an explicit json null system parses`() {
+        val body = """{"choices":[{"message":{"content":"{\"system\": null, \"games\": [\"Ristar\"]}"}}]}"""
+        assertEquals(Parsed.Extraction(listOf("Ristar"), null), LlmResponseParser.parse(body))
+    }
+
+    @Test
+    fun `a bare array still parses with a null system`() {
+        // Backward-compat pin: stale gateways/models may keep answering the old
+        // array-only contract.
+        val body = """{"choices":[{"message":{"content":"[\"Ristar\"]"}}]}"""
+        assertEquals(Parsed.Extraction(listOf("Ristar"), null), LlmResponseParser.parse(body))
     }
 
     @Test
@@ -52,16 +90,16 @@ class LlmResponseParserTest {
     @Test
     fun `a fully fenced array parses without surrounding prose`() {
         val body = """{"choices":[{"message":{"role":"assistant","content":"```json\n[\"Ristar\"]\n```"}}]}"""
-        assertEquals(Parsed.Titles(listOf("Ristar")), LlmResponseParser.parse(body))
+        assertEquals(Parsed.Extraction(listOf("Ristar")), LlmResponseParser.parse(body))
     }
 
     @Test
     fun `blank entries are filtered and an empty array is valid`() {
         val blanks = """{"choices":[{"message":{"content":"[\"Ristar\", \"  \", \"\"]"}}]}"""
-        assertEquals(Parsed.Titles(listOf("Ristar")), LlmResponseParser.parse(blanks))
+        assertEquals(Parsed.Extraction(listOf("Ristar")), LlmResponseParser.parse(blanks))
 
         val empty = """{"choices":[{"message":{"content":"[]"}}]}"""
-        assertEquals(Parsed.Titles(emptyList()), LlmResponseParser.parse(empty))
+        assertEquals(Parsed.Extraction(emptyList()), LlmResponseParser.parse(empty))
     }
 
     @Test

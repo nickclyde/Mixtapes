@@ -1,0 +1,17 @@
+{
+  "id": "gen-1720000005-pqr678",
+  "object": "chat.completion",
+  "created": 1720000005,
+  "model": "openai/gpt-5-mini",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"system\": \"Super Nintendo\", \"games\": [\"Castlevania: Symphony of the Night\", \"Ys I & II\", \"Terranigma\"]}"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {"prompt_tokens": 8250, "completion_tokens": 50, "total_tokens": 8300}
+}

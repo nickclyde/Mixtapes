@@ -1,0 +1,17 @@
+{
+  "id": "gen-1720000006-stu901",
+  "object": "chat.completion",
+  "created": 1720000006,
+  "model": "meta-llama/llama-4-maverick:free",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"system\": \"amiga\", \"games\": [\"Castlevania: Symphony of the Night\", \"Ys I & II\", \"Terranigma\"]}"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {"prompt_tokens": 8250, "completion_tokens": 49, "total_tokens": 8299}
+}

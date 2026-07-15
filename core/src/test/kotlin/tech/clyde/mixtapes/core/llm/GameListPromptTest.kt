@@ -28,7 +28,11 @@ class GameListPromptTest {
         assertEquals("user", messages[1].jsonObject["role"]?.jsonPrimitive?.content)
 
         val system = messages[0].jsonObject["content"]!!.jsonPrimitive.content
-        assertTrue(system.contains("JSON array of strings"))
+        assertTrue(system.contains("\"games\""))
+        assertTrue(system.contains("\"system\""))
+        // The system-id vocabulary is embedded from SystemHint.canonicalIds.
+        assertTrue(system.contains("snes"))
+        assertTrue(system.contains("pcengine"))
 
         // Quotes in the title must survive JSON encoding; transcript must be present verbatim.
         val user = messages[1].jsonObject["content"]!!.jsonPrimitive.content

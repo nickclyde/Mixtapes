@@ -28,7 +28,8 @@ class LlmClient(
     data class Config(val baseUrl: String, val apiKey: String, val model: String)
 
     sealed interface Result {
-        data class Success(val titles: List<String>) : Result
+        /** [detectedSystem] is the video's system as a canonical SystemHint id, or null. */
+        data class Success(val titles: List<String>, val detectedSystem: String? = null) : Result
         data class Failure(val error: Error, val detail: String? = null) : Result
     }
 
@@ -85,11 +86,12 @@ class LlmClient(
             }
 
             when (parsed) {
-                is LlmResponseParser.Parsed.Titles ->
+                is LlmResponseParser.Parsed.Extraction ->
                     if (parsed.titles.isEmpty()) {
+                        // A detected system with no titles is still a useless answer.
                         Result.Failure(Error.EMPTY)
                     } else {
-                        Result.Success(parsed.titles)
+                        Result.Success(parsed.titles, parsed.system)
                     }
                 is LlmResponseParser.Parsed.ApiError -> Result.Failure(Error.HTTP, parsed.message)
                 LlmResponseParser.Parsed.Unparseable -> Result.Failure(Error.PARSE)

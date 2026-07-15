@@ -3,21 +3,27 @@ package tech.clyde.mixtapes.core.llm
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import tech.clyde.mixtapes.core.match.SystemHint
 
 /**
  * Parses the raw HTTP response body of an OpenAI-compatible chat/completions call.
- * Providers differ in how faithfully they honor "output only a JSON array", so the
+ * Providers differ in how faithfully they honor "output only a JSON object", so the
  * content is parsed through a defensive ladder rather than trusted.
  */
 object LlmResponseParser {
 
     sealed interface Parsed {
-        /** The extracted titles; an empty list is a valid (if useless) model answer. */
-        data class Titles(val titles: List<String>) : Parsed
+        /**
+         * The extraction; an empty title list is a valid (if useless) model answer.
+         * [system] is the video's detected system as a canonical [SystemHint] id,
+         * or null when absent, unrecognized, or the content was a bare title array.
+         */
+        data class Extraction(val titles: List<String>, val system: String? = null) : Parsed
 
         /** The gateway returned a structured error ({"error":{"message":...}}). */
         data class ApiError(val message: String) : Parsed
@@ -43,7 +49,7 @@ object LlmResponseParser {
             null
         } ?: return Parsed.Unparseable
 
-        return titlesFromContent(content)?.let { Parsed.Titles(it) } ?: Parsed.Unparseable
+        return extractionFromContent(content) ?: Parsed.Unparseable
     }
 
     private fun apiErrorMessage(error: JsonElement?): String? = try {
@@ -54,20 +60,38 @@ object LlmResponseParser {
 
     /**
      * The ladder, cheapest first:
-     * 1. content is exactly a JSON array of strings
+     * 1. content is exactly a JSON array of strings (older prompt/model shape; no system)
      * 2. same, after stripping markdown code fences
-     * 3. content is a JSON object with exactly one array-of-strings value ({"games":[...]})
+     * 3. content is a JSON object — a "games" array of strings (falling back to a
+     *    single array-of-strings value) plus an optional sibling "system"
      * 4. first balanced [...] substring that parses as an array of strings
+     *    (prose-wrapped output degrades to titles-only)
      */
-    private fun titlesFromContent(content: String): List<String>? {
+    private fun extractionFromContent(content: String): Parsed.Extraction? {
         val trimmed = content.trim()
 
-        stringArray(trimmed)?.let { return it }
-        stringArray(stripCodeFences(trimmed))?.let { return it }
-        singleArrayValueOfObject(stripCodeFences(trimmed))?.let { return it }
-        firstBalancedArray(trimmed)?.let { array -> stringArray(array)?.let { return it } }
+        stringArray(trimmed)?.let { return Parsed.Extraction(it) }
+        val unfenced = stripCodeFences(trimmed)
+        stringArray(unfenced)?.let { return Parsed.Extraction(it) }
+        objectExtraction(unfenced)?.let { return it }
+        firstBalancedArray(trimmed)?.let { array ->
+            stringArray(array)?.let { return Parsed.Extraction(it) }
+        }
 
         return null
+    }
+
+    private fun objectExtraction(json: String): Parsed.Extraction? {
+        val obj = try {
+            Json.parseToJsonElement(json).jsonObject
+        } catch (_: Exception) {
+            return null
+        }
+        val titles = (obj["games"] as? JsonArray)?.let { stringArray(it.toString()) }
+            ?: singleArrayValue(obj)
+            ?: return null
+        val system = (obj["system"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        return Parsed.Extraction(titles, system?.let { SystemHint.canonical(it) })
     }
 
     /** Parses [json] iff it is a JSON array whose elements are all strings; blanks filtered. */
@@ -90,14 +114,8 @@ object LlmResponseParser {
         return fenced.matchEntire(content)?.groupValues?.get(1)?.trim() ?: content
     }
 
-    private fun singleArrayValueOfObject(json: String): List<String>? {
-        val obj = try {
-            Json.parseToJsonElement(json).jsonObject
-        } catch (_: Exception) {
-            return null
-        }
-        val arrays = obj.values.filterIsInstance<JsonArray>()
-        val single = arrays.singleOrNull() ?: return null
+    private fun singleArrayValue(obj: JsonObject): List<String>? {
+        val single = obj.values.filterIsInstance<JsonArray>().singleOrNull() ?: return null
         return stringArray(single.toString())
     }
 
