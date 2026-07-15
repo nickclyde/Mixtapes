@@ -74,6 +74,31 @@ class ChapterParserTest {
     }
 
     @Test
+    fun `a long monotonic run starting late still parses`() {
+        // Real-world regression (SNESdrunk): an unstamped intro pushes the
+        // first game chapter to 0:41, past MAX_FIRST_START_SECONDS.
+        val chapters = ChapterParser.parse(Fixtures.text("descriptions/late_start.txt"))
+
+        assertEquals(10, chapters.size)
+        assertEquals("Super Mario World", chapters[0].title)
+        assertEquals(41, chapters[0].seconds)
+        assertEquals("Tetris Attack", chapters.last().title)
+        assertEquals(6 * 60 + 55, chapters.last().seconds)
+    }
+
+    @Test
+    fun `a short late-starting run is still rejected`() {
+        val description = """
+            [0:41] Game One
+            [1:23] Game Two
+            [2:46] Game Three
+            [3:19] Game Four
+            [4:41] Game Five
+        """.trimIndent()
+        assertTrue(ChapterParser.parse(description).isEmpty())
+    }
+
+    @Test
     fun `stray timestamps in prose are rejected`() {
         val chapters = ChapterParser.parse(Fixtures.text("descriptions/decoys.txt"))
         assertTrue(chapters.isEmpty())

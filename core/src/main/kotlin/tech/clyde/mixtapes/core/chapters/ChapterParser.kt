@@ -6,6 +6,13 @@ object ChapterParser {
     const val MIN_CHAPTERS = 3
     const val MAX_FIRST_START_SECONDS = 30
 
+    /**
+     * A monotonic run this long is a chapter list no matter when it starts —
+     * real videos (SNESdrunk) open with unstamped intros, putting the first
+     * game chapter past [MAX_FIRST_START_SECONDS].
+     */
+    const val MIN_LATE_RUN_CHAPTERS = 8
+
     private val TIMESTAMP = Regex("""(?<![\d:])(?:(\d{1,2}):)?([0-5]?\d):([0-5]\d)(?![\d:])""")
     private val RANK_DECORATION = Regex("""^#?\d{1,3}\s*[-–—.):]\s*""")
     private val SEPARATOR_CHARS = charArrayOf('-', '–', '—', '|', ':', '.', '[', ']', '(', ')')
@@ -20,13 +27,17 @@ object ChapterParser {
      * The collected lines only qualify as a chapter list when at least
      * [MIN_CHAPTERS] of them form a run of monotonically non-decreasing
      * timestamps starting at or before [MAX_FIRST_START_SECONDS] — this
-     * rejects stray timestamps in prose. When several runs qualify, the
-     * longest wins. Returns an empty list when nothing qualifies.
+     * rejects stray timestamps in prose. A run of [MIN_LATE_RUN_CHAPTERS]
+     * or more qualifies regardless of where it starts. When several runs
+     * qualify, the longest wins. Returns an empty list when nothing
+     * qualifies.
      */
     fun parse(description: String): List<Chapter> {
         val candidates = description.lines().mapNotNull { parseLine(it) }
         val run = longestMonotonicRun(candidates)
-        return if (run.size >= MIN_CHAPTERS && run.first().seconds <= MAX_FIRST_START_SECONDS) run else emptyList()
+        val qualifies = run.size >= MIN_CHAPTERS && run.first().seconds <= MAX_FIRST_START_SECONDS ||
+            run.size >= MIN_LATE_RUN_CHAPTERS
+        return if (qualifies) run else emptyList()
     }
 
     private fun parseLine(line: String): Chapter? {
