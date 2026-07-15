@@ -15,4 +15,22 @@ object CollectionWriter {
         val prefix = absoluteRomsRoot?.trimEnd('/') ?: "%ROMPATH%"
         return roms.joinToString(separator = "") { "$prefix/${it.relativePath}\n" }
     }
+
+    /**
+     * Renders a parsed entry list back to cfg contents. Game lines are
+     * re-rendered under the current prefix policy (same as [render]); opaque
+     * lines pass through verbatim.
+     */
+    fun renderEntries(
+        entries: List<CollectionCfgParser.Entry>,
+        absoluteRomsRoot: String? = null,
+    ): String {
+        val prefix = absoluteRomsRoot?.trimEnd('/') ?: "%ROMPATH%"
+        return entries.joinToString(separator = "") { entry ->
+            when (entry) {
+                is CollectionCfgParser.Entry.Game -> "$prefix/${entry.rom.relativePath}\n"
+                is CollectionCfgParser.Entry.Opaque -> "${entry.rawLine}\n"
+            }
+        }
+    }
 }

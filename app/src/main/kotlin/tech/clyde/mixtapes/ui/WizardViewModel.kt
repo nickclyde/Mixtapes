@@ -10,10 +10,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import tech.clyde.mixtapes.core.chapters.ChapterFilter
 import tech.clyde.mixtapes.core.chapters.ChapterParser
+import tech.clyde.mixtapes.core.collection.CollectionCfgParser
 import tech.clyde.mixtapes.core.collection.CollectionName
 import tech.clyde.mixtapes.core.collection.CollectionWriter
+import tech.clyde.mixtapes.core.collection.MixtapeInfo
 import tech.clyde.mixtapes.core.match.Matcher
 import tech.clyde.mixtapes.core.model.Chapter
 import tech.clyde.mixtapes.core.model.MatchResult
@@ -24,6 +27,7 @@ import tech.clyde.mixtapes.core.youtube.VideoMetadata
 import tech.clyde.mixtapes.llm.LlmClient
 import tech.clyde.mixtapes.saf.CollectionFileWriter
 import tech.clyde.mixtapes.saf.DirPrefs
+import tech.clyde.mixtapes.saf.MixtapesIndexStore
 import tech.clyde.mixtapes.saf.RomScanner
 import tech.clyde.mixtapes.saf.TreePathGuesser
 import tech.clyde.mixtapes.youtube.TranscriptClient
@@ -33,11 +37,13 @@ enum class WorkPhase { FETCHING, TRANSCRIBING, EXTRACTING, SCANNING, MATCHING }
 
 enum class WizardError {
     INVALID_URL, NETWORK, EXTRACTION, NO_CHAPTERS, EMPTY_LIBRARY, WRITE_FAILED,
-    NO_TRANSCRIPT, NO_API_KEY, LLM_ERROR,
+    READ_FAILED, NO_TRANSCRIPT, NO_API_KEY, LLM_ERROR,
 }
 
 sealed interface WizardStep {
     data object Setup : WizardStep
+    data object Home : WizardStep
+    data object Edit : WizardStep
     data object Input : WizardStep
     data class Working(val phase: WorkPhase, val progress: Float? = null) : WizardStep
     data object Review : WizardStep
@@ -53,6 +59,28 @@ sealed interface WizardStep {
         val canRetryWithTranscript: Boolean = false,
     ) : WizardStep
 }
+
+/** An existing collection opened for editing. */
+data class EditorState(
+    val originalFileName: String,
+    /** Editable display name; sanitized on save. */
+    val name: String,
+    val entries: List<CollectionCfgParser.Entry>,
+    /** ROM scan in flight for the add-game picker. */
+    val scanning: Boolean = false,
+    val showOverwritePrompt: Boolean = false,
+) {
+    val gameCount: Int get() = entries.size
+}
+
+/** One row of the home screen's library list. */
+data class HomeCollection(
+    val fileName: String,
+    val displayName: String,
+    val gameCount: Int,
+    val videoUrl: String? = null,
+    val videoTitle: String? = null,
+)
 
 data class ReviewRow(
     val chapter: Chapter,
@@ -97,6 +125,11 @@ data class WizardState(
     val detectedSystem: String? = null,
     /** Root-level system directory names of the ROM library, for the pickers. */
     val availableSystems: List<String> = emptyList(),
+    val homeCollections: List<HomeCollection> = emptyList(),
+    val homeLoading: Boolean = false,
+    /** Home-screen row (fileName) awaiting delete confirmation. */
+    val pendingDelete: String? = null,
+    val editor: EditorState? = null,
 ) {
     val includedCount: Int get() = rows.count { it.included && it.selected != null }
 
@@ -114,6 +147,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     private val dirPrefs = DirPrefs(application)
     private val scanner = RomScanner(application.contentResolver)
     private val fileWriter = CollectionFileWriter(application.contentResolver)
+    private val indexStore = MixtapesIndexStore(fileWriter)
     private val youTube = YouTubeClient()
     private val transcriptClient = TranscriptClient()
     private val llmClient = LlmClient()
@@ -142,7 +176,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         val ready = dirPrefs.isReady()
         _state.update {
             it.copy(
-                step = if (ready) WizardStep.Input else WizardStep.Setup,
+                step = if (ready) WizardStep.Home else WizardStep.Setup,
                 esDePicked = dirPrefs.esDeTreeUri != null,
                 romsPicked = dirPrefs.romsTreeUri != null,
                 esDePath = dirPrefs.esDeTreeUri?.let(TreePathGuesser::guessPath),
@@ -153,6 +187,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 llmModel = dirPrefs.llmModel,
             )
         }
+        if (ready) loadHome()
     }
 
     /** A YouTube link arrived via the share sheet. */
@@ -163,7 +198,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             ?: return
         _state.update { state ->
             when (state.step) {
-                WizardStep.Input, is WizardStep.Done, is WizardStep.Error ->
+                WizardStep.Home, WizardStep.Input, is WizardStep.Done, is WizardStep.Error ->
                     state.copy(step = WizardStep.Input, sharedUrl = url)
                 else -> state.copy(sharedUrl = url)
             }
@@ -248,7 +283,155 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun continueFromSetup() {
-        if (dirPrefs.isReady()) _state.update { it.copy(step = WizardStep.Input) }
+        if (!dirPrefs.isReady()) return
+        _state.update { it.copy(step = WizardStep.Home) }
+        loadHome()
+    }
+
+    // ---- Home ----
+
+    /** Rebuilds the library list from the collections dir + metadata index. */
+    fun loadHome() {
+        val esDeUri = dirPrefs.esDeTreeUri ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(homeLoading = true) }
+            val files = runCatching { fileWriter.listCollections(esDeUri) }.getOrDefault(emptyList())
+            val index = runCatching { indexStore.load(esDeUri) }.getOrDefault(emptyMap())
+            val absoluteRoot = dirPrefs.romsTreeUri?.let(TreePathGuesser::guessPath)
+            val items = files.mapNotNull { file ->
+                val displayName = CollectionName.fromFileName(file.fileName) ?: return@mapNotNull null
+                val contents = fileWriter.readFile(esDeUri, file.fileName) ?: ""
+                val info = index[file.fileName]
+                HomeCollection(
+                    fileName = file.fileName,
+                    displayName = displayName,
+                    // Opaque lines count too — ES-DE sees them as entries.
+                    gameCount = CollectionCfgParser.parse(contents, absoluteRoot).size,
+                    videoUrl = info?.videoUrl,
+                    videoTitle = info?.videoTitle,
+                )
+            }.sortedBy { it.displayName.lowercase() }
+            _state.update { it.copy(homeCollections = items, homeLoading = false) }
+        }
+    }
+
+    /** Home's "New mixtape" button. */
+    fun startCreate() {
+        _state.update { it.copy(step = WizardStep.Input) }
+    }
+
+    fun requestDelete(fileName: String) {
+        _state.update { it.copy(pendingDelete = fileName) }
+    }
+
+    fun dismissDelete() {
+        _state.update { it.copy(pendingDelete = null) }
+    }
+
+    fun confirmDelete() {
+        val fileName = _state.value.pendingDelete ?: return
+        val esDeUri = dirPrefs.esDeTreeUri ?: return
+        viewModelScope.launch {
+            fileWriter.deleteFile(esDeUri, fileName)
+            indexStore.remove(esDeUri, fileName)
+            _state.update { it.copy(pendingDelete = null) }
+            loadHome()
+        }
+    }
+
+    // ---- Edit ----
+
+    fun openEditor(fileName: String) {
+        val esDeUri = dirPrefs.esDeTreeUri ?: return
+        viewModelScope.launch {
+            val contents = fileWriter.readFile(esDeUri, fileName)
+            if (contents == null) {
+                _state.update { it.copy(step = WizardStep.Error(WizardError.READ_FAILED, fileName)) }
+                return@launch
+            }
+            val absoluteRoot = dirPrefs.romsTreeUri?.let(TreePathGuesser::guessPath)
+            _state.update {
+                it.copy(
+                    step = WizardStep.Edit,
+                    editor = EditorState(
+                        originalFileName = fileName,
+                        name = CollectionName.fromFileName(fileName) ?: fileName,
+                        entries = CollectionCfgParser.parse(contents, absoluteRoot),
+                    ),
+                )
+            }
+        }
+    }
+
+    fun setEditName(name: String) = updateEditor { it.copy(name = name) }
+
+    fun removeEntry(index: Int) = updateEditor {
+        it.copy(entries = it.entries.filterIndexed { i, _ -> i != index })
+    }
+
+    fun addGame(rom: RomFile) = updateEditor {
+        // rawLine only matters for opaque round-trips; games re-render from the ROM.
+        it.copy(entries = it.entries + CollectionCfgParser.Entry.Game(rom, rawLine = ""))
+    }
+
+    /**
+     * The editor opens instantly from the cfg alone; the library scan runs
+     * only when the add-game picker first needs it, then stays cached for the
+     * session like the wizard's.
+     */
+    fun ensureRomsForPicker() {
+        if (cachedRoms != null || _state.value.editor?.scanning == true) return
+        val romsUri = dirPrefs.romsTreeUri ?: return
+        viewModelScope.launch {
+            updateEditor { it.copy(scanning = true) }
+            runCatching { scanner.scan(romsUri) }.getOrNull()?.let { cachedRoms = it }
+            updateEditor { it.copy(scanning = false) }
+        }
+    }
+
+    fun saveEditor(overwrite: Boolean = false) {
+        val editor = _state.value.editor ?: return
+        val esDeUri = dirPrefs.esDeTreeUri ?: return
+        if (editor.entries.isEmpty()) return
+        val name = CollectionName.fromVideoTitle(editor.name)
+        val newFileName = fileWriter.fileName(name)
+        val renamed = newFileName != editor.originalFileName
+
+        viewModelScope.launch {
+            updateEditor { it.copy(showOverwritePrompt = false) }
+            if (renamed && !overwrite &&
+                withContext(Dispatchers.IO) { fileWriter.exists(esDeUri, name) }
+            ) {
+                updateEditor { it.copy(showOverwritePrompt = true) }
+                return@launch
+            }
+            val absoluteRoot =
+                if (dirPrefs.writeAbsolutePaths) dirPrefs.romsTreeUri?.let(TreePathGuesser::guessPath) else null
+            val contents = CollectionWriter.renderEntries(editor.entries, absoluteRoot)
+            when (val result = fileWriter.write(esDeUri, name, contents, overwrite = true)) {
+                is CollectionFileWriter.WriteResult.Error ->
+                    _state.update {
+                        it.copy(step = WizardStep.Error(WizardError.WRITE_FAILED, result.message))
+                    }
+                // Unreachable with overwrite = true, but the type demands it.
+                CollectionFileWriter.WriteResult.AlreadyExists -> Unit
+                is CollectionFileWriter.WriteResult.Written -> {
+                    if (renamed) {
+                        fileWriter.deleteFile(esDeUri, editor.originalFileName)
+                        indexStore.move(esDeUri, editor.originalFileName, newFileName)
+                    }
+                    backToHome()
+                }
+            }
+        }
+    }
+
+    fun dismissEditorOverwrite() = updateEditor { it.copy(showOverwritePrompt = false) }
+
+    private fun updateEditor(transform: (EditorState) -> EditorState) {
+        _state.update { state ->
+            state.editor?.let { state.copy(editor = transform(it)) } ?: state
+        }
     }
 
     // ---- Input / pipeline ----
@@ -491,6 +674,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             .filter { !it.chapter.skipped && it.selected == null }
             .map { ArchiveSearch.forChapterTitle(it.chapter.title) }
 
+        val sourceVideo = lastFetch
         viewModelScope.launch {
             _state.update { it.copy(showOverwritePrompt = false) }
             val absoluteRoot =
@@ -503,13 +687,27 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     _state.update {
                         it.copy(step = WizardStep.Error(WizardError.WRITE_FAILED, result.message))
                     }
-                is CollectionFileWriter.WriteResult.Written ->
+                is CollectionFileWriter.WriteResult.Written -> {
+                    // Best-effort: the pasted-text path has no video, and an
+                    // index failure must never fail the collection itself.
+                    sourceVideo?.let { (videoId, metadata) ->
+                        indexStore.put(
+                            esDeUri,
+                            result.fileName,
+                            MixtapeInfo(
+                                videoUrl = "https://www.youtube.com/watch?v=$videoId",
+                                videoTitle = metadata.title,
+                                createdAt = java.time.Instant.now().toString(),
+                            ),
+                        )
+                    }
                     _state.update {
                         it.copy(
                             step = WizardStep.Done(result.fileName, name, selectedRoms.size, missing),
                             showOverwritePrompt = false,
                         )
                     }
+                }
             }
         }
     }
@@ -532,5 +730,21 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 detectedSystem = null,
             )
         }
+    }
+
+    fun backToHome() {
+        _state.update {
+            it.copy(
+                step = WizardStep.Home,
+                rows = emptyList(),
+                collectionName = "",
+                showOverwritePrompt = false,
+                systemChoice = SystemChoice.Auto,
+                detectedSystem = null,
+                pendingDelete = null,
+                editor = null,
+            )
+        }
+        loadHome()
     }
 }

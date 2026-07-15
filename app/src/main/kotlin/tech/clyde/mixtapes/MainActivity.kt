@@ -14,16 +14,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import tech.clyde.mixtapes.ui.WizardStep
 import tech.clyde.mixtapes.ui.WizardViewModel
 import tech.clyde.mixtapes.ui.screens.DoneScreen
+import tech.clyde.mixtapes.ui.screens.EditScreen
 import tech.clyde.mixtapes.ui.screens.ErrorScreen
+import tech.clyde.mixtapes.ui.screens.HomeScreen
 import tech.clyde.mixtapes.ui.screens.InputScreen
 import tech.clyde.mixtapes.ui.screens.ReviewScreen
 import tech.clyde.mixtapes.ui.screens.SetupScreen
 import tech.clyde.mixtapes.ui.screens.WorkingScreen
 import tech.clyde.mixtapes.ui.theme.MixtapesTheme
+import tech.clyde.mixtapes.util.LinkActions
 
 class MainActivity : ComponentActivity() {
     private val wizardViewModel: WizardViewModel by viewModels()
@@ -56,9 +60,18 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun WizardApp(viewModel: WizardViewModel = viewModel()) {
     val state by viewModel.state.collectAsState()
+    val context = LocalContext.current
 
+    // Home is the root — system back exits from there.
     BackHandler(enabled = state.step is WizardStep.Review || state.step is WizardStep.Error) {
         viewModel.backToInput()
+    }
+    BackHandler(
+        enabled = state.step is WizardStep.Input ||
+            state.step is WizardStep.Done ||
+            state.step is WizardStep.Edit,
+    ) {
+        viewModel.backToHome()
     }
 
     androidx.compose.foundation.layout.Box(Modifier.safeDrawingPadding()) {
@@ -73,6 +86,32 @@ private fun WizardApp(viewModel: WizardViewModel = viewModel()) {
                 onLlmModelChange = viewModel::setLlmModel,
                 onContinue = viewModel::continueFromSetup,
             )
+            WizardStep.Home -> HomeScreen(
+                collections = state.homeCollections,
+                loading = state.homeLoading,
+                pendingDelete = state.pendingDelete,
+                onCreateNew = viewModel::startCreate,
+                onEdit = viewModel::openEditor,
+                onRequestDelete = viewModel::requestDelete,
+                onConfirmDelete = viewModel::confirmDelete,
+                onDismissDelete = viewModel::dismissDelete,
+                onOpenVideo = { url -> LinkActions.openUrl(context, url) },
+                onChangeFolders = viewModel::changeFolders,
+            )
+            WizardStep.Edit -> state.editor?.let { editor ->
+                EditScreen(
+                    editor = editor,
+                    allRoms = viewModel.allRoms(),
+                    onNameChange = viewModel::setEditName,
+                    onRemoveEntry = viewModel::removeEntry,
+                    onAddGameRequested = viewModel::ensureRomsForPicker,
+                    onPickRom = viewModel::addGame,
+                    onSave = { viewModel.saveEditor() },
+                    onConfirmOverwrite = { viewModel.saveEditor(overwrite = true) },
+                    onDismissOverwrite = viewModel::dismissEditorOverwrite,
+                    onCancel = viewModel::backToHome,
+                )
+            }
             WizardStep.Input -> InputScreen(
                 initialUrl = state.sharedUrl,
                 useTranscript = state.useTranscript,
@@ -103,6 +142,7 @@ private fun WizardApp(viewModel: WizardViewModel = viewModel()) {
                 gameCount = step.gameCount,
                 missing = step.missing,
                 onMakeAnother = viewModel::backToInput,
+                onBackToLibrary = viewModel::backToHome,
             )
             is WizardStep.Error -> ErrorScreen(
                 error = step.error,

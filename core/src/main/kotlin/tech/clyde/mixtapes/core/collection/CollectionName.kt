@@ -20,6 +20,15 @@ object CollectionName {
         return cleaned.take(MAX_LENGTH).trimEnd().ifEmpty { "mixtape" }
     }
 
+    /** `"custom-Foo.cfg"` → `"Foo"`; null for anything that isn't a custom collection file. */
+    fun fromFileName(fileName: String): String? {
+        if (!fileName.startsWith(FILE_PREFIX) || !fileName.endsWith(FILE_SUFFIX)) return null
+        return fileName.removePrefix(FILE_PREFIX).removeSuffix(FILE_SUFFIX).ifEmpty { null }
+    }
+
+    private const val FILE_PREFIX = "custom-"
+    private const val FILE_SUFFIX = ".cfg"
+
     private fun Char.isEsDeSafe(): Boolean =
         this in 'A'..'Z' || this in 'a'..'z' || this in '0'..'9' ||
             this == ' ' || this == '_' || this == '-'

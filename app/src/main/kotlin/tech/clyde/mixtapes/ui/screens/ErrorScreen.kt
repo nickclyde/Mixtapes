@@ -43,6 +43,8 @@ fun ErrorScreen(
                     "No ROMs found in the selected ROMs directory."
                 WizardError.WRITE_FAILED ->
                     "Couldn't write the collection file." + (detail?.let { "\n$it" } ?: "")
+                WizardError.READ_FAILED ->
+                    "Couldn't read the collection file." + (detail?.let { "\n$it" } ?: "")
                 WizardError.NO_TRANSCRIPT ->
                     "This video has no usable captions, so the transcript can't be read. " +
                         "Paste the game list manually instead."

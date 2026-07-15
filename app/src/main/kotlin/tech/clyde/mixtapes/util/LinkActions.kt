@@ -22,8 +22,13 @@ object LinkActions {
                 Toast.LENGTH_LONG,
             ).show()
         }
+        openUrl(context, link.url)
+    }
+
+    /** Opens a plain URL in the browser (or the app claiming it, e.g. YouTube). */
+    fun openUrl(context: Context, url: String) {
         try {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(link.url)))
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(context, "No browser found", Toast.LENGTH_SHORT).show()
         }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
@@ -31,6 +32,7 @@ fun DoneScreen(
     gameCount: Int,
     missing: List<MissingGame>,
     onMakeAnother: () -> Unit,
+    onBackToLibrary: () -> Unit,
 ) {
     if (missing.isEmpty()) {
         Column(
@@ -40,7 +42,7 @@ fun DoneScreen(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            DoneHeader(fileName, collectionName, gameCount, onMakeAnother)
+            DoneHeader(fileName, collectionName, gameCount, onMakeAnother, onBackToLibrary)
         }
     } else {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -51,7 +53,7 @@ fun DoneScreen(
                     .padding(horizontal = 48.dp, vertical = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                item { DoneHeader(fileName, collectionName, gameCount, onMakeAnother) }
+                item { DoneHeader(fileName, collectionName, gameCount, onMakeAnother, onBackToLibrary) }
                 item {
                     Text(
                         "Missing games (${missing.size})",
@@ -78,6 +80,7 @@ private fun DoneHeader(
     collectionName: String,
     gameCount: Int,
     onMakeAnother: () -> Unit,
+    onBackToLibrary: () -> Unit,
 ) {
     Text("Mixtape recorded ✔", style = MaterialTheme.typography.headlineMedium)
     Spacer(Modifier.height(12.dp))
@@ -96,7 +99,10 @@ private fun DoneHeader(
         textAlign = TextAlign.Center,
     )
     Spacer(Modifier.height(24.dp))
-    Button(onClick = onMakeAnother) { Text("Make another") }
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Button(onClick = onMakeAnother) { Text("Make another") }
+        OutlinedButton(onClick = onBackToLibrary) { Text("Library") }
+    }
 }
 
 @Composable
