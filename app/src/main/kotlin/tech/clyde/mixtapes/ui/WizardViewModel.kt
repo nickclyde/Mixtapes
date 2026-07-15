@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,8 +59,22 @@ data class ReviewRow(
     val result: MatchResult,
     val selected: RomFile?,
     val included: Boolean,
+    /** The user chose this ROM by hand; a system-filter rematch must not undo it. */
+    val userPicked: Boolean = false,
 ) {
     val confident: Boolean get() = result is MatchResult.Auto
+}
+
+/** Which system the mixtape is scoped to. Manual choices beat LLM detection. */
+sealed interface SystemChoice {
+    /** Default: apply the LLM-detected system when there is one. */
+    data object Auto : SystemChoice
+
+    /** Explicit "no filter" — overrides a detected system. */
+    data object All : SystemChoice
+
+    /** A specific ROM system directory, verbatim (e.g. "snes"). */
+    data class Specific(val system: String) : SystemChoice
 }
 
 data class WizardState(
@@ -77,8 +92,21 @@ data class WizardState(
     val collectionName: String = "",
     val rows: List<ReviewRow> = emptyList(),
     val showOverwritePrompt: Boolean = false,
+    val systemChoice: SystemChoice = SystemChoice.Auto,
+    /** Canonical SystemHint id the LLM detected for the current video, if any. */
+    val detectedSystem: String? = null,
+    /** Root-level system directory names of the ROM library, for the pickers. */
+    val availableSystems: List<String> = emptyList(),
 ) {
     val includedCount: Int get() = rows.count { it.included && it.selected != null }
+
+    /** The system matching is scoped to right now, or null for the whole library. */
+    val activeSystemFilter: String?
+        get() = when (val choice = systemChoice) {
+            SystemChoice.Auto -> detectedSystem
+            SystemChoice.All -> null
+            is SystemChoice.Specific -> choice.system
+        }
 }
 
 class WizardViewModel(application: Application) : AndroidViewModel(application) {
@@ -105,6 +133,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         refreshSetup()
+        refreshAvailableSystems()
     }
 
     // ---- Setup ----
@@ -154,6 +183,11 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         _state.update { it.copy(useTranscript = enabled) }
     }
 
+    /** Input-screen system selection; takes effect when the next pipeline matches. */
+    fun setSystemChoice(choice: SystemChoice) {
+        _state.update { it.copy(systemChoice = choice) }
+    }
+
     fun setLlmApiKey(key: String) {
         dirPrefs.llmApiKey = key
         _state.update { it.copy(llmConfigured = dirPrefs.llmConfigured()) }
@@ -180,6 +214,26 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         dirPrefs.romsTreeUri = uri
         cachedRoms = null
         refreshSetupPaths()
+        refreshAvailableSystems()
+    }
+
+    /**
+     * Populates the system dropdown. The cached scan is authoritative (only
+     * dirs that actually held ROMs); before any scan, a single root child
+     * query lists the directories. Failures (revoked permission) leave the
+     * list empty — the pickers degrade to Auto/All.
+     */
+    private fun refreshAvailableSystems() {
+        val cached = cachedRoms
+        if (cached != null) {
+            _state.update { it.copy(availableSystems = cached.map { rom -> rom.system }.distinct().sorted()) }
+            return
+        }
+        val romsUri = dirPrefs.romsTreeUri ?: return
+        viewModelScope.launch {
+            val systems = runCatching { scanner.listSystems(romsUri) }.getOrDefault(emptyList())
+            _state.update { it.copy(availableSystems = systems) }
+        }
     }
 
     private fun refreshSetupPaths() {
@@ -201,7 +255,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     fun makeMixtapeFromUrl(url: String) {
         viewModelScope.launch {
-            _state.update { it.copy(step = WizardStep.Working(WorkPhase.FETCHING)) }
+            _state.update { it.copy(step = WizardStep.Working(WorkPhase.FETCHING), detectedSystem = null) }
             val trimmed = url.trim()
             when (val fetched = youTube.fetch(trimmed)) {
                 is YouTubeClient.FetchResult.Failure -> {
@@ -228,6 +282,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     fun makeMixtapeFromPastedText(text: String) {
         lastFetch = null
+        _state.update { it.copy(detectedSystem = null) }
         viewModelScope.launch { runChapterPipeline(description = text, defaultName = "mixtape") }
     }
 
@@ -237,6 +292,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             backToInput()
             return
         }
+        _state.update { it.copy(detectedSystem = null) }
         viewModelScope.launch {
             runTranscriptPipeline(videoId, metadata, CollectionName.fromVideoTitle(metadata.title))
         }
@@ -288,7 +344,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             apiKey = dirPrefs.llmApiKey ?: return,
             model = dirPrefs.llmModel,
         )
-        val titles = when (val result = llmClient.extractGameTitles(metadata.title, transcript, config)) {
+        val extraction = when (val result = llmClient.extractGameTitles(metadata.title, transcript, config)) {
             is LlmClient.Result.Failure -> {
                 val detail = when (result.error) {
                     LlmClient.Error.CONFIG ->
@@ -301,13 +357,17 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 _state.update { it.copy(step = WizardStep.Error(WizardError.LLM_ERROR, detail)) }
                 return
             }
-            is LlmClient.Result.Success -> result.titles
+            is LlmClient.Result.Success -> result
         }
+
+        // Auto-applied via activeSystemFilter while systemChoice is Auto; a manual
+        // choice on the Input screen simply never reads it.
+        _state.update { it.copy(detectedSystem = extraction.detectedSystem) }
 
         // ChapterFilter as a safety net: the model may still emit "Intro"/"Honorable
         // Mentions"-style entries despite the prompt. Timestamps don't exist here and
         // nothing downstream reads Chapter.seconds.
-        val chapters = ChapterFilter.markSkipped(titles.map { Chapter(title = it, seconds = 0) })
+        val chapters = ChapterFilter.markSkipped(extraction.titles.map { Chapter(title = it, seconds = 0) })
         scanMatchReview(chapters, defaultName)
     }
 
@@ -328,8 +388,13 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        _state.update { it.copy(step = WizardStep.Working(WorkPhase.MATCHING)) }
-        val matches = Matcher.match(chapters.map { it.title }, roms)
+        _state.update {
+            it.copy(
+                step = WizardStep.Working(WorkPhase.MATCHING),
+                availableSystems = roms.map { rom -> rom.system }.distinct().sorted(),
+            )
+        }
+        val matches = Matcher.match(chapters.map { it.title }, roms, state.value.activeSystemFilter)
         val rows = chapters.zip(matches) { chapter, match ->
             val auto = match.result as? MatchResult.Auto
             ReviewRow(
@@ -358,7 +423,49 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun pickRomForRow(index: Int, rom: RomFile) {
-        updateRow(index) { it.copy(selected = rom, included = true) }
+        updateRow(index) { it.copy(selected = rom, included = true, userPicked = true) }
+    }
+
+    /** Review-screen chip: change the system scope and rematch in place. */
+    fun applySystemFilter(choice: SystemChoice) {
+        _state.update { it.copy(systemChoice = choice) }
+        rematchPreservingPicks()
+    }
+
+    /**
+     * Re-runs matching against the cached library under the current filter.
+     * Hand-picked rows keep their pick (even one outside the new filter — the
+     * pick is the escape hatch); other rows are rebuilt, preserving a manual
+     * uncheck when the auto pick didn't change.
+     */
+    private fun rematchPreservingPicks() {
+        val roms = cachedRoms ?: return
+        viewModelScope.launch(Dispatchers.Default) {
+            val snapshot = _state.value
+            val matches = Matcher.match(
+                snapshot.rows.map { it.chapter.title },
+                roms,
+                snapshot.activeSystemFilter,
+            )
+            _state.update { state ->
+                if (state.rows.size != matches.size) return@update state
+                state.copy(
+                    rows = state.rows.zip(matches) { old, match ->
+                        val auto = match.result as? MatchResult.Auto
+                        when {
+                            old.userPicked -> old.copy(result = match.result)
+                            auto?.rom == old.selected -> old.copy(result = match.result)
+                            else -> ReviewRow(
+                                chapter = old.chapter,
+                                result = match.result,
+                                selected = auto?.rom,
+                                included = auto != null && !old.chapter.skipped,
+                            )
+                        }
+                    },
+                )
+            }
+        }
     }
 
     private fun updateRow(index: Int, transform: (ReviewRow) -> ReviewRow) {
@@ -420,6 +527,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 rows = emptyList(),
                 collectionName = "",
                 showOverwritePrompt = false,
+                // A system scope is per-video; don't leak it into the next one.
+                systemChoice = SystemChoice.Auto,
+                detectedSystem = null,
             )
         }
     }

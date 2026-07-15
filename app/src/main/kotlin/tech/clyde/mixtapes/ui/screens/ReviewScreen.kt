@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
@@ -35,11 +36,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import tech.clyde.mixtapes.core.match.SystemHint
 import tech.clyde.mixtapes.core.model.MatchResult
 import tech.clyde.mixtapes.core.model.RomFile
 import tech.clyde.mixtapes.core.model.ScoredCandidate
 import tech.clyde.mixtapes.core.search.ArchiveSearch
 import tech.clyde.mixtapes.ui.ReviewRow
+import tech.clyde.mixtapes.ui.SystemChoice
 import tech.clyde.mixtapes.ui.WizardState
 
 @Composable
@@ -49,11 +52,13 @@ fun ReviewScreen(
     onNameChange: (String) -> Unit,
     onRowIncluded: (Int, Boolean) -> Unit,
     onPickRom: (Int, RomFile) -> Unit,
+    onSystemFilterChange: (SystemChoice) -> Unit,
     onWrite: () -> Unit,
     onConfirmOverwrite: () -> Unit,
     onDismissOverwrite: () -> Unit,
 ) {
     var pickerRowIndex by rememberSaveable { mutableIntStateOf(-1) }
+    var showSystemDialog by rememberSaveable { mutableStateOf(false) }
 
     val gameRows = state.rows.withIndex().filter { !it.value.chapter.skipped }
     val skippedRows = state.rows.withIndex().filter { it.value.chapter.skipped }
@@ -72,7 +77,29 @@ fun ReviewScreen(
                 label = { Text("Collection name") },
                 singleLine = true,
             )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(4.dp))
+
+            val filter = state.activeSystemFilter
+            AssistChip(
+                onClick = { showSystemDialog = true },
+                label = {
+                    Text(
+                        when {
+                            state.systemChoice is SystemChoice.Specific -> "System: $filter"
+                            filter != null -> "System: $filter · detected"
+                            else -> "All systems"
+                        },
+                    )
+                },
+            )
+            if (filter != null && allRoms.none { SystemHint.matches(filter, it.system) }) {
+                Text(
+                    "No ROM folder matches \"$filter\" — tap the chip to change.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
 
             LazyColumn(modifier = Modifier.weight(1f)) {
                 itemsIndexed(gameRows, key = { _, item -> item.index }) { _, (index, row) ->
@@ -141,6 +168,18 @@ fun ReviewScreen(
         }
     }
 
+    if (showSystemDialog) {
+        SystemFilterDialog(
+            activeFilter = state.activeSystemFilter,
+            availableSystems = state.availableSystems,
+            onPick = { choice ->
+                onSystemFilterChange(choice)
+                showSystemDialog = false
+            },
+            onDismiss = { showSystemDialog = false },
+        )
+    }
+
     if (state.showOverwritePrompt) {
         AlertDialog(
             onDismissRequest = onDismissOverwrite,
@@ -148,6 +187,55 @@ fun ReviewScreen(
             text = { Text("custom-${state.collectionName}.cfg already exists. Overwrite it?") },
             confirmButton = { TextButton(onClick = onConfirmOverwrite) { Text("Overwrite") } },
             dismissButton = { TextButton(onClick = onDismissOverwrite) { Text("Cancel") } },
+        )
+    }
+}
+
+/**
+ * Rescopes matching to one system (or the whole library). "Clearing" a
+ * detected system means picking All — detection already ran; re-selecting
+ * Auto would just re-apply it.
+ */
+@Composable
+private fun SystemFilterDialog(
+    activeFilter: String?,
+    availableSystems: List<String>,
+    onPick: (SystemChoice) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Match against") },
+        text = {
+            LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+                item {
+                    SystemChoiceRow(
+                        label = "All systems",
+                        selected = activeFilter == null,
+                        onPick = { onPick(SystemChoice.All) },
+                    )
+                }
+                items(availableSystems) { system ->
+                    SystemChoiceRow(
+                        label = system,
+                        selected = system == activeFilter,
+                        onPick = { onPick(SystemChoice.Specific(system)) },
+                    )
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun SystemChoiceRow(label: String, selected: Boolean, onPick: () -> Unit) {
+    Surface(onClick = onPick, modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
         )
     }
 }

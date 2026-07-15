@@ -32,6 +32,17 @@ class RomScanner(private val resolver: ContentResolver) {
         roms
     }
 
+    /**
+     * Names of the root-level system directories — a single child query, no
+     * tree walk, so it's cheap enough for the Input screen's system dropdown.
+     */
+    suspend fun listSystems(romsTree: Uri): List<String> = withContext(Dispatchers.IO) {
+        listChildren(romsTree, DocumentsContract.getTreeDocumentId(romsTree))
+            .filter { it.isDirectory && !it.name.startsWith(".") }
+            .map { it.name }
+            .sorted()
+    }
+
     private fun collect(
         tree: Uri,
         parentDocId: String,
