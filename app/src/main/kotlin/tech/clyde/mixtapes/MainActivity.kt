@@ -1,6 +1,7 @@
 package tech.clyde.mixtapes
 
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -31,15 +32,25 @@ import tech.clyde.mixtapes.util.LinkActions
 
 class MainActivity : ComponentActivity() {
     private val wizardViewModel: WizardViewModel by viewModels()
+    private var smokeEsDeDocumentId: String? = null
+    private var smokeRomsDocumentId: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            smokeEsDeDocumentId = intent.getStringExtra(EXTRA_SMOKE_ESDE_DOCUMENT_ID)
+            smokeRomsDocumentId = intent.getStringExtra(EXTRA_SMOKE_ROMS_DOCUMENT_ID)
+        }
         handleSendIntent(intent)
         setContent {
             MixtapesTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    WizardApp(wizardViewModel)
+                    WizardApp(
+                        viewModel = wizardViewModel,
+                        esDeInitialDocumentId = smokeEsDeDocumentId,
+                        romsInitialDocumentId = smokeRomsDocumentId,
+                    )
                 }
             }
         }
@@ -55,10 +66,22 @@ class MainActivity : ComponentActivity() {
             intent.getStringExtra(Intent.EXTRA_TEXT)?.let(wizardViewModel::onSharedText)
         }
     }
+
+    private companion object {
+        // Used only by scripts/adb-smoke.sh. Release builds ignore both extras.
+        const val EXTRA_SMOKE_ESDE_DOCUMENT_ID =
+            "tech.clyde.mixtapes.extra.SMOKE_ESDE_DOCUMENT_ID"
+        const val EXTRA_SMOKE_ROMS_DOCUMENT_ID =
+            "tech.clyde.mixtapes.extra.SMOKE_ROMS_DOCUMENT_ID"
+    }
 }
 
 @Composable
-private fun WizardApp(viewModel: WizardViewModel = viewModel()) {
+private fun WizardApp(
+    viewModel: WizardViewModel = viewModel(),
+    esDeInitialDocumentId: String? = null,
+    romsInitialDocumentId: String? = null,
+) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
 
@@ -85,6 +108,8 @@ private fun WizardApp(viewModel: WizardViewModel = viewModel()) {
                 onLlmBaseUrlChange = viewModel::setLlmBaseUrl,
                 onLlmModelChange = viewModel::setLlmModel,
                 onContinue = viewModel::continueFromSetup,
+                esDeInitialDocumentId = esDeInitialDocumentId,
+                romsInitialDocumentId = romsInitialDocumentId,
             )
             WizardStep.Home -> HomeScreen(
                 collections = state.homeCollections,

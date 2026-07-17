@@ -41,6 +41,8 @@ fun SetupScreen(
     onLlmBaseUrlChange: (String) -> Unit = {},
     onLlmModelChange: (String) -> Unit = {},
     onContinue: () -> Unit,
+    esDeInitialDocumentId: String? = null,
+    romsInitialDocumentId: String? = null,
 ) {
     val esDeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) {
         it?.let(onEsDePicked)
@@ -64,14 +66,14 @@ fun SetupScreen(
             title = "ES-DE directory",
             subtitle = state.esDePath ?: if (state.esDePicked) "Picked" else "Usually /storage/emulated/0/ES-DE",
             picked = state.esDePicked,
-            onPick = { esDeLauncher.launch(initialUri("primary:ES-DE")) },
+            onPick = { esDeLauncher.launch(initialUri(esDeInitialDocumentId ?: "primary:ES-DE")) },
         )
         Spacer(Modifier.height(12.dp))
         DirCard(
             title = "ROMs directory",
             subtitle = state.romsPath ?: if (state.romsPicked) "Picked" else "Usually /storage/emulated/0/ROMs",
             picked = state.romsPicked,
-            onPick = { romsLauncher.launch(initialUri("primary:ROMs")) },
+            onPick = { romsLauncher.launch(initialUri(romsInitialDocumentId ?: "primary:ROMs")) },
         )
 
         Spacer(Modifier.height(12.dp))
