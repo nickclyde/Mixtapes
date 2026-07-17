@@ -23,5 +23,6 @@ sourceSets {
 
 dependencies {
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.jsoup)
     testImplementation(libs.junit)
 }

@@ -9,7 +9,7 @@ import tech.clyde.mixtapes.core.llm.GameListPrompt
 
 /**
  * Persisted settings: the two SAF tree URIs (ES-DE dir read+write, ROMs dir read)
- * plus the optional LLM configuration for transcript extraction.
+ * plus optional LLM configuration for transcript and written-list extraction.
  */
 class DirPrefs(private val context: Context) {
     private val prefs = context.getSharedPreferences("dirs", Context.MODE_PRIVATE)
@@ -59,7 +59,7 @@ class DirPrefs(private val context: Context) {
             ?: GameListPrompt.DEFAULT_MODEL
         set(value) = prefs.edit { putString(KEY_LLM_MODEL, value.trim().takeIf { it.isNotBlank() }) }
 
-    /** True when transcript extraction can run (an API key is saved). */
+    /** True when AI source extraction can run (an API key is saved). */
     fun llmConfigured(): Boolean = llmApiKey != null
 
     fun takePersistable(uri: Uri, write: Boolean) {

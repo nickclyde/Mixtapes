@@ -27,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import tech.clyde.mixtapes.ui.SystemChoice
+import tech.clyde.mixtapes.youtube.YouTubeClient
 
 @Composable
 fun InputScreen(
@@ -44,11 +45,12 @@ fun InputScreen(
     var url by rememberSaveable(initialUrl) { mutableStateOf(initialUrl) }
     var showPasteBox by rememberSaveable { mutableStateOf(false) }
     var pasted by rememberSaveable { mutableStateOf("") }
+    val isYouTube = YouTubeClient.isYouTubeUrl(url)
 
     WizardColumn {
         Text("Mixtapes", style = MaterialTheme.typography.headlineLarge)
         Text(
-            "Turn a YouTube game list into an ES-DE collection",
+            "Turn a video, article, or written game list into an ES-DE collection",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -58,8 +60,8 @@ fun InputScreen(
             value = url,
             onValueChange = { url = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("YouTube video URL") },
-            placeholder = { Text("https://www.youtube.com/watch?v=…") },
+            label = { Text("Video or article URL") },
+            placeholder = { Text("https://youtube.com/watch?… or https://example.com/best-games") },
             singleLine = true,
         )
         Spacer(Modifier.height(8.dp))
@@ -71,14 +73,16 @@ fun InputScreen(
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(
-                checked = useTranscript && llmConfigured,
+                checked = useTranscript && llmConfigured && isYouTube,
                 onCheckedChange = onUseTranscriptChange,
-                enabled = llmConfigured,
+                enabled = llmConfigured && isYouTube,
             )
             Column {
                 Text("Extract from transcript with AI", style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    if (llmConfigured) {
+                    if (!isYouTube) {
+                        "Available for YouTube URLs. Articles use AI automatically."
+                    } else if (llmConfigured) {
                         "Reads the captions instead of the chapter list — for videos without chapters."
                     } else {
                         "Add an API key in Settings first."
@@ -99,7 +103,7 @@ fun InputScreen(
 
         Spacer(Modifier.height(8.dp))
         TextButton(onClick = { showPasteBox = !showPasteBox }) {
-            Text(if (showPasteBox) "Hide pasted chapter list" else "Paste a chapter list instead")
+            Text(if (showPasteBox) "Hide pasted game list" else "Paste a game list instead")
         }
         TextButton(onClick = onChangeFolders) {
             Text("Settings")
@@ -111,8 +115,11 @@ fun InputScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 160.dp),
-                label = { Text("Video description or chapter list") },
-                placeholder = { Text("0:00 Intro\n1:23 Chrono Trigger\n…") },
+                label = { Text("Chapters, game list, or prose") },
+                placeholder = { Text("0:00 Intro\n1:23 Chrono Trigger\n…\n\nor paste an ordinary written list") },
+                supportingText = {
+                    Text("Timestamped chapters are parsed locally; other text uses configured AI.")
+                },
             )
             Spacer(Modifier.height(12.dp))
             Button(
@@ -167,7 +174,7 @@ private fun SystemDropdown(
             }
         }
         Text(
-            "Match ROMs from one system only. Auto-detect uses the video when extracting with AI.",
+            "Match ROMs from one system only. Auto-detect uses the source when extracting with AI.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

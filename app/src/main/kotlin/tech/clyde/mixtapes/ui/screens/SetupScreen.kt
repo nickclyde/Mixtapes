@@ -112,7 +112,7 @@ fun SetupScreen(
 }
 
 /**
- * Optional BYOK configuration for transcript extraction. Collapsed by default;
+ * Optional BYOK configuration for AI source extraction. Collapsed by default;
  * setup can complete without ever opening it.
  */
 @Composable
@@ -136,7 +136,7 @@ private fun LlmSection(
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("AI transcript extraction (optional)", style = MaterialTheme.typography.titleMedium)
+                    Text("AI game-list extraction (optional)", style = MaterialTheme.typography.titleMedium)
                     Text(
                         if (state.llmConfigured) "Configured" else "Bring your own API key",
                         style = MaterialTheme.typography.bodySmall,
@@ -151,8 +151,8 @@ private fun LlmSection(
 
             Spacer(Modifier.height(12.dp))
             Text(
-                "Reads the video's captions and asks an AI model for the game list — useful " +
-                    "for videos without chapters. Works with OpenRouter, OpenAI, or any " +
+                "Reads video captions, web articles, and ordinary pasted lists to find the games. " +
+                    "Works with OpenRouter, OpenAI, or any " +
                     "OpenAI-compatible endpoint; costs go to your own key.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

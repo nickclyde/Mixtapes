@@ -4,6 +4,7 @@ import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import tech.clyde.mixtapes.core.youtube.ExtractionResult
 import tech.clyde.mixtapes.core.youtube.VideoMetadata
@@ -57,5 +58,11 @@ class YouTubeClient(private val http: OkHttpClient = OkHttpClient()) {
 
         fun looksLikeYouTubeUrl(text: String): Boolean =
             videoId(text) != null && ("youtube.com" in text || "youtu.be" in text)
+
+        fun isYouTubeUrl(text: String): Boolean {
+            val host = text.trim().toHttpUrlOrNull()?.host?.lowercase() ?: return false
+            return host == "youtu.be" || host.endsWith(".youtu.be") ||
+                host == "youtube.com" || host.endsWith(".youtube.com")
+        }
     }
 }

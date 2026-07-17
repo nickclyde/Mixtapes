@@ -42,7 +42,7 @@ fun HomeScreen(
     onRequestDelete: (String) -> Unit,
     onConfirmDelete: () -> Unit,
     onDismissDelete: () -> Unit,
-    onOpenVideo: (String) -> Unit,
+    onOpenSource: (String) -> Unit,
     onChangeFolders: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -82,7 +82,7 @@ fun HomeScreen(
                     Text("No mixtapes yet", style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Turn a “best games” video into an ES-DE collection.",
+                        "Turn a “best games” video or article into an ES-DE collection.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -102,7 +102,7 @@ fun HomeScreen(
                         CollectionRow(
                             collection = collection,
                             onClick = { onEdit(collection.fileName) },
-                            onOpenVideo = onOpenVideo,
+                            onOpenSource = onOpenSource,
                             onDelete = { onRequestDelete(collection.fileName) },
                         )
                         HorizontalDivider()
@@ -129,7 +129,7 @@ fun HomeScreen(
 private fun CollectionRow(
     collection: HomeCollection,
     onClick: () -> Unit,
-    onOpenVideo: (String) -> Unit,
+    onOpenSource: (String) -> Unit,
     onDelete: () -> Unit,
 ) {
     Row(
@@ -151,8 +151,8 @@ private fun CollectionRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        collection.videoUrl?.let { url ->
-            AssistChip(onClick = { onOpenVideo(url) }, label = { Text("▶ YouTube") })
+        collection.sourceUrl?.let { url ->
+            AssistChip(onClick = { onOpenSource(url) }, label = { Text("Source") })
         }
         IconButton(onClick = onDelete) {
             // No icon-pack dependency; a glyph keeps the app lean.

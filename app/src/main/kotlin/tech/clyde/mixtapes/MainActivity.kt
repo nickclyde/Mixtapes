@@ -95,7 +95,7 @@ private fun WizardApp(viewModel: WizardViewModel = viewModel()) {
                 onRequestDelete = viewModel::requestDelete,
                 onConfirmDelete = viewModel::confirmDelete,
                 onDismissDelete = viewModel::dismissDelete,
-                onOpenVideo = { url -> LinkActions.openUrl(context, url) },
+                onOpenSource = { url -> LinkActions.openUrl(context, url) },
                 onChangeFolders = viewModel::changeFolders,
             )
             WizardStep.Edit -> state.editor?.let { editor ->

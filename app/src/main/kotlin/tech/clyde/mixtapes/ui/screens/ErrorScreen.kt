@@ -32,8 +32,9 @@ fun ErrorScreen(
         Spacer(Modifier.height(12.dp))
         Text(
             text = when (error) {
-                WizardError.INVALID_URL -> "That doesn't look like a YouTube video URL."
-                WizardError.NETWORK -> "Couldn't reach YouTube. Check the connection and try again."
+                WizardError.INVALID_URL ->
+                    "Enter a YouTube video URL or a public HTTPS article URL. Private and insecure pages aren't supported."
+                WizardError.NETWORK -> "Couldn't fetch that source. Check the connection and try again."
                 WizardError.EXTRACTION ->
                     "Couldn't read the video page. You can paste the description text instead."
                 WizardError.NO_CHAPTERS ->
@@ -49,10 +50,19 @@ fun ErrorScreen(
                     "This video has no usable captions, so the transcript can't be read. " +
                         "Paste the game list manually instead."
                 WizardError.NO_API_KEY ->
-                    "Transcript extraction needs an API key. Add one under Settings → " +
-                        "AI transcript extraction."
+                    "Written-list and transcript extraction need an API key. Add one under Settings → " +
+                        "AI game-list extraction."
                 WizardError.LLM_ERROR ->
                     "The AI request failed." + (detail?.let { "\n$it" } ?: "")
+                WizardError.ARTICLE_HTTP ->
+                    "The article server refused or couldn't serve the page." +
+                        (detail?.let { "\n$it" } ?: "")
+                WizardError.ARTICLE_UNSUPPORTED ->
+                    "That URL didn't return an HTML article." + (detail?.let { "\n$it" } ?: "")
+                WizardError.ARTICLE_TOO_LARGE ->
+                    "That article is larger than the 5 MiB download limit. Try pasting its game list instead."
+                WizardError.ARTICLE_UNREADABLE ->
+                    "Couldn't find enough readable article text. JavaScript-only, paywalled, or blocked pages may need to be pasted instead."
             },
             style = MaterialTheme.typography.bodyLarge,
             textAlign = TextAlign.Center,

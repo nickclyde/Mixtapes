@@ -10,10 +10,11 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import tech.clyde.mixtapes.core.llm.GameListPrompt
 import tech.clyde.mixtapes.core.llm.LlmResponseParser
+import tech.clyde.mixtapes.core.llm.SourceKind
 
 /**
- * Asks an OpenAI-compatible chat/completions endpoint for the game list in a
- * transcript. Which endpoint and model is entirely the user's choice (BYOK);
+ * Asks an OpenAI-compatible chat/completions endpoint for a source's game list.
+ * Which endpoint and model is entirely the user's choice (BYOK);
  * request/response shapes live in :core (GameListPrompt / LlmResponseParser).
  */
 class LlmClient(
@@ -28,7 +29,7 @@ class LlmClient(
     data class Config(val baseUrl: String, val apiKey: String, val model: String)
 
     sealed interface Result {
-        /** [detectedSystem] is the video's system as a canonical SystemHint id, or null. */
+        /** [detectedSystem] is the source's system as a canonical SystemHint id, or null. */
         data class Success(val titles: List<String>, val detectedSystem: String? = null) : Result
         data class Failure(val error: Error, val detail: String? = null) : Result
     }
@@ -50,7 +51,12 @@ class LlmClient(
         EMPTY,
     }
 
-    suspend fun extractGameTitles(videoTitle: String, transcript: String, config: Config): Result =
+    suspend fun extractGameTitles(
+        sourceTitle: String,
+        sourceKind: SourceKind,
+        content: String,
+        config: Config,
+    ): Result =
         withContext(Dispatchers.IO) {
             // Both .url() (malformed base URL) and .header() (illegal chars in the
             // key) throw IllegalArgumentException on user-typed config — surface it
@@ -63,7 +69,7 @@ class LlmClient(
                     .header("HTTP-Referer", "https://github.com/nickclyde/Mixtapes")
                     .header("X-Title", "Mixtapes")
                     .post(
-                        GameListPrompt.requestBody(config.model, videoTitle, transcript)
+                        GameListPrompt.requestBody(config.model, sourceTitle, sourceKind, content)
                             .toRequestBody("application/json".toMediaType()),
                     )
                     .build()

@@ -11,12 +11,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import tech.clyde.mixtapes.article.ArticleClient
+import tech.clyde.mixtapes.core.article.ArticleHtmlExtractor
 import tech.clyde.mixtapes.core.chapters.ChapterFilter
 import tech.clyde.mixtapes.core.chapters.ChapterParser
 import tech.clyde.mixtapes.core.collection.CollectionCfgParser
 import tech.clyde.mixtapes.core.collection.CollectionName
 import tech.clyde.mixtapes.core.collection.CollectionWriter
 import tech.clyde.mixtapes.core.collection.MixtapeInfo
+import tech.clyde.mixtapes.core.collection.SourceType
+import tech.clyde.mixtapes.core.llm.SourceKind
 import tech.clyde.mixtapes.core.match.Matcher
 import tech.clyde.mixtapes.core.model.Chapter
 import tech.clyde.mixtapes.core.model.MatchResult
@@ -37,7 +41,8 @@ enum class WorkPhase { FETCHING, TRANSCRIBING, EXTRACTING, SCANNING, MATCHING }
 
 enum class WizardError {
     INVALID_URL, NETWORK, EXTRACTION, NO_CHAPTERS, EMPTY_LIBRARY, WRITE_FAILED,
-    READ_FAILED, NO_TRANSCRIPT, NO_API_KEY, LLM_ERROR,
+    READ_FAILED, NO_TRANSCRIPT, NO_API_KEY, LLM_ERROR, ARTICLE_HTTP,
+    ARTICLE_UNSUPPORTED, ARTICLE_TOO_LARGE, ARTICLE_UNREADABLE,
 }
 
 sealed interface WizardStep {
@@ -78,8 +83,9 @@ data class HomeCollection(
     val fileName: String,
     val displayName: String,
     val gameCount: Int,
-    val videoUrl: String? = null,
-    val videoTitle: String? = null,
+    val sourceUrl: String? = null,
+    val sourceTitle: String? = null,
+    val sourceType: SourceType? = null,
 )
 
 data class ReviewRow(
@@ -121,7 +127,7 @@ data class WizardState(
     val rows: List<ReviewRow> = emptyList(),
     val showOverwritePrompt: Boolean = false,
     val systemChoice: SystemChoice = SystemChoice.Auto,
-    /** Canonical SystemHint id the LLM detected for the current video, if any. */
+    /** Canonical SystemHint id the LLM detected for the current source, if any. */
     val detectedSystem: String? = null,
     /** Root-level system directory names of the ROM library, for the pickers. */
     val availableSystems: List<String> = emptyList(),
@@ -149,6 +155,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     private val fileWriter = CollectionFileWriter(application.contentResolver)
     private val indexStore = MixtapesIndexStore(fileWriter)
     private val youTube = YouTubeClient()
+    private val articleClient = ArticleClient()
     private val transcriptClient = TranscriptClient()
     private val llmClient = LlmClient()
 
@@ -163,7 +170,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
      * without hitting YouTube again. Cleared by the pasted-text path, which has
      * no video to transcribe.
      */
-    private var lastFetch: Pair<String, VideoMetadata>? = null
+    private var lastYouTubeFetch: Pair<String, VideoMetadata>? = null
+
+    /** Provenance for the collection currently being built. Pasted text has none. */
+    private var currentSource: MixtapeInfo? = null
 
     init {
         refreshSetup()
@@ -190,11 +200,12 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
         if (ready) loadHome()
     }
 
-    /** A YouTube link arrived via the share sheet. */
+    /** The first shared HTTPS URL is accepted; dispatch happens after submission. */
     fun onSharedText(text: String) {
-        val url = Regex("""https?://\S+""").findAll(text)
+        val url = Regex("""https://\S+""").findAll(text)
             .map { it.value }
-            .firstOrNull { YouTubeClient.videoId(it) != null }
+            .map { it.trimEnd('.', ',', ';', ')', ']', '}') }
+            .firstOrNull()
             ?: return
         _state.update { state ->
             when (state.step) {
@@ -307,8 +318,9 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     displayName = displayName,
                     // Opaque lines count too — ES-DE sees them as entries.
                     gameCount = CollectionCfgParser.parse(contents, absoluteRoot).size,
-                    videoUrl = info?.videoUrl,
-                    videoTitle = info?.videoTitle,
+                    sourceUrl = info?.sourceUrl,
+                    sourceTitle = info?.sourceTitle,
+                    sourceType = info?.sourceType,
                 )
             }.sortedBy { it.displayName.lowercase() }
             _state.update { it.copy(homeCollections = items, homeLoading = false) }
@@ -317,6 +329,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Home's "New mixtape" button. */
     fun startCreate() {
+        clearSourceState()
         _state.update { it.copy(step = WizardStep.Input) }
     }
 
@@ -437,9 +450,18 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     // ---- Input / pipeline ----
 
     fun makeMixtapeFromUrl(url: String) {
+        clearSourceState()
         viewModelScope.launch {
             _state.update { it.copy(step = WizardStep.Working(WorkPhase.FETCHING), detectedSystem = null) }
             val trimmed = url.trim()
+            if (!YouTubeClient.isYouTubeUrl(trimmed)) {
+                if (trimmed.startsWith("https://", ignoreCase = true) && !dirPrefs.llmConfigured()) {
+                    _state.update { it.copy(step = WizardStep.Error(WizardError.NO_API_KEY)) }
+                    return@launch
+                }
+                runArticlePipeline(trimmed)
+                return@launch
+            }
             when (val fetched = youTube.fetch(trimmed)) {
                 is YouTubeClient.FetchResult.Failure -> {
                     val error = when (fetched.error) {
@@ -451,7 +473,14 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 is YouTubeClient.FetchResult.Success -> {
                     val videoId = YouTubeClient.videoId(trimmed)
-                    lastFetch = videoId?.let { it to fetched.metadata }
+                    lastYouTubeFetch = videoId?.let { it to fetched.metadata }
+                    currentSource = videoId?.let {
+                        MixtapeInfo(
+                            sourceUrl = "https://www.youtube.com/watch?v=$it",
+                            sourceTitle = fetched.metadata.title,
+                            sourceType = SourceType.YOUTUBE,
+                        )
+                    }
                     val defaultName = CollectionName.fromVideoTitle(fetched.metadata.title)
                     if (state.value.useTranscript && videoId != null) {
                         runTranscriptPipeline(videoId, fetched.metadata, defaultName)
@@ -464,14 +493,26 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun makeMixtapeFromPastedText(text: String) {
-        lastFetch = null
+        clearSourceState()
         _state.update { it.copy(detectedSystem = null) }
-        viewModelScope.launch { runChapterPipeline(description = text, defaultName = "mixtape") }
+        viewModelScope.launch {
+            val chapters = ChapterFilter.markSkipped(ChapterParser.parse(text))
+            if (chapters.isNotEmpty()) {
+                scanMatchReview(chapters, "mixtape")
+            } else {
+                runAiPipeline(
+                    sourceTitle = "Pasted game list",
+                    sourceKind = SourceKind.PASTED_TEXT,
+                    content = text,
+                    defaultName = "mixtape",
+                )
+            }
+        }
     }
 
     /** From the NO_CHAPTERS error screen: rerun the last fetched video through the transcript path. */
     fun retryWithTranscript() {
-        val (videoId, metadata) = lastFetch ?: run {
+        val (videoId, metadata) = lastYouTubeFetch ?: run {
             backToInput()
             return
         }
@@ -490,7 +531,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                         WizardError.NO_CHAPTERS,
                         // Offered even without an API key; the retry then explains itself
                         // with a NO_API_KEY error pointing at Settings.
-                        canRetryWithTranscript = lastFetch != null,
+                        canRetryWithTranscript = lastYouTubeFetch != null,
                     ),
                 )
             }
@@ -504,7 +545,6 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             _state.update { it.copy(step = WizardStep.Error(WizardError.NO_API_KEY)) }
             return
         }
-
         _state.update { it.copy(step = WizardStep.Working(WorkPhase.TRANSCRIBING)) }
         val transcript = when (val fetched = transcriptClient.fetch(videoId, metadata.captionTracks)) {
             is TranscriptClient.Result.Failure -> {
@@ -521,13 +561,74 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             is TranscriptClient.Result.Success -> fetched.plainText
         }
 
+        runAiPipeline(
+            sourceTitle = metadata.title,
+            sourceKind = SourceKind.TRANSCRIPT,
+            content = transcript,
+            defaultName = defaultName,
+        )
+    }
+
+    private suspend fun runArticlePipeline(url: String) {
+        when (val fetched = articleClient.fetch(url)) {
+            is ArticleClient.FetchResult.Failure -> {
+                val error = when (fetched.error) {
+                    ArticleClient.FetchError.INVALID_URL -> WizardError.INVALID_URL
+                    ArticleClient.FetchError.NETWORK -> WizardError.NETWORK
+                    ArticleClient.FetchError.HTTP -> WizardError.ARTICLE_HTTP
+                    ArticleClient.FetchError.UNSUPPORTED_CONTENT -> WizardError.ARTICLE_UNSUPPORTED
+                    ArticleClient.FetchError.TOO_LARGE -> WizardError.ARTICLE_TOO_LARGE
+                    ArticleClient.FetchError.UNREADABLE -> WizardError.ARTICLE_UNREADABLE
+                }
+                _state.update { it.copy(step = WizardStep.Error(error, fetched.detail)) }
+                return
+            }
+            is ArticleClient.FetchResult.Success -> {
+                val extracted = withContext(Dispatchers.Default) {
+                    ArticleHtmlExtractor.extract(fetched.page.html, fetched.page.title)
+                }
+                val article = when (extracted) {
+                    ArticleHtmlExtractor.Result.InsufficientContent -> {
+                        _state.update { it.copy(step = WizardStep.Error(WizardError.ARTICLE_UNREADABLE)) }
+                        return
+                    }
+                    is ArticleHtmlExtractor.Result.Success -> extracted.article
+                }
+                val title = article.title.ifBlank { fetched.page.title }.ifBlank { "mixtape" }
+                currentSource = MixtapeInfo(
+                    sourceUrl = fetched.page.finalUrl,
+                    sourceTitle = title.takeIf { it != "mixtape" },
+                    sourceType = SourceType.ARTICLE,
+                )
+                runAiPipeline(
+                    sourceTitle = title,
+                    sourceKind = SourceKind.ARTICLE,
+                    content = article.content,
+                    defaultName = CollectionName.fromVideoTitle(title),
+                )
+            }
+        }
+    }
+
+    private suspend fun runAiPipeline(
+        sourceTitle: String,
+        sourceKind: SourceKind,
+        content: String,
+        defaultName: String,
+    ) {
+        if (!dirPrefs.llmConfigured()) {
+            _state.update { it.copy(step = WizardStep.Error(WizardError.NO_API_KEY)) }
+            return
+        }
         _state.update { it.copy(step = WizardStep.Working(WorkPhase.EXTRACTING)) }
         val config = LlmClient.Config(
             baseUrl = dirPrefs.llmBaseUrl,
             apiKey = dirPrefs.llmApiKey ?: return,
             model = dirPrefs.llmModel,
         )
-        val extraction = when (val result = llmClient.extractGameTitles(metadata.title, transcript, config)) {
+        val extraction = when (
+            val result = llmClient.extractGameTitles(sourceTitle, sourceKind, content, config)
+        ) {
             is LlmClient.Result.Failure -> {
                 val detail = when (result.error) {
                     LlmClient.Error.CONFIG ->
@@ -535,7 +636,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                     LlmClient.Error.NETWORK -> "Couldn't reach the AI endpoint."
                     LlmClient.Error.HTTP -> result.detail
                     LlmClient.Error.PARSE -> "The model's response couldn't be read."
-                    LlmClient.Error.EMPTY -> "The model found no games in the transcript."
+                    LlmClient.Error.EMPTY -> "The model found no games in the source."
                 }
                 _state.update { it.copy(step = WizardStep.Error(WizardError.LLM_ERROR, detail)) }
                 return
@@ -674,7 +775,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             .filter { !it.chapter.skipped && it.selected == null }
             .map { ArchiveSearch.forChapterTitle(it.chapter.title) }
 
-        val sourceVideo = lastFetch
+        val source = currentSource
         viewModelScope.launch {
             _state.update { it.copy(showOverwritePrompt = false) }
             val absoluteRoot =
@@ -688,15 +789,16 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
                         it.copy(step = WizardStep.Error(WizardError.WRITE_FAILED, result.message))
                     }
                 is CollectionFileWriter.WriteResult.Written -> {
-                    // Best-effort: the pasted-text path has no video, and an
+                    // Best-effort: the pasted-text path has no URL, and an
                     // index failure must never fail the collection itself.
-                    sourceVideo?.let { (videoId, metadata) ->
+                    source?.let { provenance ->
                         indexStore.put(
                             esDeUri,
                             result.fileName,
                             MixtapeInfo(
-                                videoUrl = "https://www.youtube.com/watch?v=$videoId",
-                                videoTitle = metadata.title,
+                                sourceUrl = provenance.sourceUrl,
+                                sourceTitle = provenance.sourceTitle,
+                                sourceType = provenance.sourceType,
                                 createdAt = java.time.Instant.now().toString(),
                             ),
                         )
@@ -719,6 +821,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     // ---- Navigation ----
 
     fun backToInput() {
+        clearSourceState()
         _state.update {
             it.copy(
                 step = WizardStep.Input,
@@ -733,6 +836,7 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun backToHome() {
+        clearSourceState()
         _state.update {
             it.copy(
                 step = WizardStep.Home,
@@ -746,5 +850,10 @@ class WizardViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
         loadHome()
+    }
+
+    private fun clearSourceState() {
+        lastYouTubeFetch = null
+        currentSource = null
     }
 }

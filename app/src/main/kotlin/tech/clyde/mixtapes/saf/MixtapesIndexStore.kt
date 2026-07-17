@@ -9,7 +9,7 @@ import tech.clyde.mixtapes.core.collection.MixtapesIndex
  * [MixtapeInfo]). The cfg files are the source of truth: index writes are
  * best-effort (failures are swallowed, never block a collection operation),
  * stale entries are ignored at display time, and collections without an
- * entry simply have no video link. Single-user app — last write wins.
+ * entry simply have no source link. Single-user app — last write wins.
  */
 class MixtapesIndexStore(private val files: CollectionFileWriter) {
 

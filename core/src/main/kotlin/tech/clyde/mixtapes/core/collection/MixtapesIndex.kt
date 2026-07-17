@@ -9,23 +9,27 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
-/** What we remember about a collection beyond its cfg file. */
+enum class SourceType(val wireName: String) {
+    YOUTUBE("youtube"),
+    ARTICLE("article");
+
+    companion object {
+        fun fromWireName(value: String?): SourceType? = entries.firstOrNull { it.wireName == value?.lowercase() }
+    }
+}
+
+/** What we remember beyond the authoritative ES-DE cfg file. */
 data class MixtapeInfo(
-    val videoUrl: String,
-    val videoTitle: String? = null,
+    val sourceUrl: String,
+    val sourceTitle: String? = null,
+    val sourceType: SourceType,
     /** ISO-8601 UTC; informational only, never parsed back. */
     val createdAt: String? = null,
 )
 
-/**
- * The app's metadata sidecar, `collections/mixtapes.json`: cfg filename →
- * [MixtapeInfo]. The cfg files are the source of truth — this index is
- * best-effort (stale or missing entries are fine) and parsing is defensive:
- * malformed input yields an empty map, never an exception.
- */
 object MixtapesIndex {
     const val FILE_NAME = "mixtapes.json"
-    private const val VERSION = 1
+    private const val VERSION = 2
 
     fun parse(json: String): Map<String, MixtapeInfo> {
         val root = try {
@@ -36,12 +40,27 @@ object MixtapesIndex {
         val collections = root["collections"] as? JsonObject ?: return emptyMap()
         return collections.mapNotNull { (fileName, value) ->
             val obj = value as? JsonObject ?: return@mapNotNull null
-            val videoUrl = obj.string("videoUrl") ?: return@mapNotNull null
-            fileName to MixtapeInfo(
-                videoUrl = videoUrl,
-                videoTitle = obj.string("videoTitle"),
-                createdAt = obj.string("createdAt"),
-            )
+            val sourceUrl = obj.string("sourceUrl")
+            if (sourceUrl != null) {
+                val sourceType = SourceType.fromWireName(obj.string("sourceType"))
+                    ?: return@mapNotNull null
+                fileName to MixtapeInfo(
+                    sourceUrl = sourceUrl,
+                    sourceTitle = obj.string("sourceTitle"),
+                    sourceType = sourceType,
+                    createdAt = obj.string("createdAt"),
+                )
+            } else {
+                // Version 1 used video-only keys. Read them regardless of the
+                // declared/missing version because parsing has always been defensive.
+                val videoUrl = obj.string("videoUrl") ?: return@mapNotNull null
+                fileName to MixtapeInfo(
+                    sourceUrl = videoUrl,
+                    sourceTitle = obj.string("videoTitle"),
+                    sourceType = SourceType.YOUTUBE,
+                    createdAt = obj.string("createdAt"),
+                )
+            }
         }.toMap()
     }
 
@@ -51,8 +70,9 @@ object MixtapesIndex {
             putJsonObject("collections") {
                 entries.toSortedMap().forEach { (fileName, info) ->
                     putJsonObject(fileName) {
-                        put("videoUrl", info.videoUrl)
-                        info.videoTitle?.let { put("videoTitle", it) }
+                        put("sourceUrl", info.sourceUrl)
+                        info.sourceTitle?.let { put("sourceTitle", it) }
+                        put("sourceType", info.sourceType.wireName)
                         info.createdAt?.let { put("createdAt", it) }
                     }
                 }
